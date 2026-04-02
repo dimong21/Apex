@@ -150,7 +150,7 @@ class VKChatManager:
         
         self.status_emojis = {'user': '👤', 'moderator': '🛡️', 'admin': '⚡', 'owner': '👑'}
         self.suspicious_logs = []
-        print("🤖 Бот успешно запущен!"
+        print("🤖 Бот успешно запущен!")
 def init_database(self):
         self.conn = sqlite3.connect('vk_bot.db', check_same_thread=False)
         self.cursor = self.conn.cursor()

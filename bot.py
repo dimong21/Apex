@@ -444,31 +444,25 @@ class VKChatManager:
     
     def extract_user_id(self, text, reply_message=None):
         """Извлечение ID пользователя из различных форматов упоминаний"""
-        # Если есть ответ на сообщение
         if reply_message and reply_message.get('from_id'):
             return reply_message['from_id']
         
-        # Поиск ID в формате [id123|text] или @id123
         match = re.search(r'\[id(\d+)[^\]]*\]', text)
         if match:
             return int(match.group(1))
         
-        # Поиск ID в формате @id123 (без скобок)
         match = re.search(r'@id(\d+)', text)
         if match:
             return int(match.group(1))
         
-        # Поиск ID в формате id123
         match = re.search(r'id(\d+)', text)
         if match:
             return int(match.group(1))
         
-        # Поиск ссылок vk.com/id123 или vk.ru/id123
         match = re.search(r'vk\.(com|ru)/id(\d+)', text)
         if match:
             return int(match.group(2))
         
-        # Поиск просто числа (ID)
         words = text.split()
         for word in words:
             if word.isdigit():
@@ -520,10 +514,10 @@ class VKChatManager:
         self.log_action(admin_id, 'set_rate', 0, f"{currency} = {rate}")
         return True, f"✅ Курс {currency} установлен: {rate}"
     
-    def create_inline_keyboard(self, buttons, inline=True):
-        """Создание инлайн клавиатуры"""
+    def create_callback_keyboard(self, buttons):
+        """Создание callback-клавиатуры (инлайн с обработкой)"""
         keyboard = {
-            "inline": inline,
+            "inline": True,
             "buttons": []
         }
         
@@ -531,8 +525,9 @@ class VKChatManager:
         for button in buttons:
             row.append({
                 "action": {
-                    "type": "text",
-                    "label": button['text']
+                    "type": "callback",
+                    "label": button['label'],
+                    "payload": button.get('payload', {})
                 },
                 "color": button.get('color', 'primary')
             })
@@ -543,110 +538,115 @@ class VKChatManager:
         
         return json.dumps(keyboard, ensure_ascii=False)
     
-    def create_start_keyboard(self):
-        return self.create_inline_keyboard([{'text': '🚀 Активировать бота', 'color': 'primary'}])
-    
-    def create_staff_keyboard(self):
-        return self.create_inline_keyboard([{'text': '👥 Показать с никами', 'color': 'primary'}])
-    
-    def create_shop_keyboard(self):
-        return self.create_inline_keyboard([
-            {'text': '📱 Телефоны', 'color': 'primary'},
-            {'text': '🏠 Дома', 'color': 'primary'},
-            {'text': '👕 Одежда', 'color': 'primary'},
-            {'text': '🎁 Вещи', 'color': 'primary'},
-            {'text': '💎 VIP Статусы', 'color': 'positive'},
-            {'text': '⛏️ Майнер BTC', 'color': 'primary'}
-        ])
-    
-    def create_phones_keyboard(self):
+    def create_agent_permissions_keyboard(self, target_id, current_permissions):
+        """Создание клавиатуры для управления правами агента"""
         buttons = []
-        for phone, price in self.inline_shop['phones'].items():
-            buttons.append({'text': f"📱 {phone} - {price}$", 'color': 'primary'})
-        return self.create_inline_keyboard(buttons)
+        
+        perm_names = {
+            'reports': '📋 Доступ к /reports',
+            'agent': '👑 Управление агентами (/agent)',
+            'givemoney': '💰 Выдача денег',
+            'givevip': '💎 Выдача VIP',
+            'sysban': '🔨 Системный бан',
+            'sysrole': '⭐ Системная роль',
+            'sysinfo': 'ℹ️ Системная информация',
+            'botadmins': '👥 Список агентов',
+            'snick': '📝 Установка ника',
+            'rnick': '🗑️ Удаление ника',
+            'delkick': '🚪 Кик забаненных',
+            'mutereports': '🔇 Мут репортов',
+            'unmutereports': '🔊 Размут репортов'
+        }
+        
+        for perm_key, perm_name in perm_names.items():
+            status = "✅" if current_permissions.get(perm_key, False) else "❌"
+            buttons.append({
+                'label': f"{status} {perm_name}",
+                'payload': json.dumps({
+                    'action': 'agent_toggle_perm',
+                    'target_id': target_id,
+                    'permission': perm_key,
+                    'current': current_permissions.get(perm_key, False)
+                }),
+                'color': 'primary'
+            })
+        
+        buttons.append({
+            'label': '🔙 Назад',
+            'payload': json.dumps({'action': 'agent_back'}),
+            'color': 'secondary'
+        })
+        
+        return self.create_callback_keyboard(buttons)
     
-    def create_houses_keyboard(self):
-        buttons = []
-        for house, price in self.inline_shop['houses'].items():
-            buttons.append({'text': f"{house} - {price}$", 'color': 'primary'})
-        return self.create_inline_keyboard(buttons)
+    def create_shop_category_keyboard(self):
+        """Создание клавиатуры для категорий магазина"""
+        buttons = [
+            {'label': '📱 Телефоны', 'payload': json.dumps({'action': 'shop_category', 'category': 'phones'}), 'color': 'primary'},
+            {'label': '🏠 Дома', 'payload': json.dumps({'action': 'shop_category', 'category': 'houses'}), 'color': 'primary'},
+            {'label': '👕 Одежда', 'payload': json.dumps({'action': 'shop_category', 'category': 'clothes'}), 'color': 'primary'},
+            {'label': '🎁 Вещи', 'payload': json.dumps({'action': 'shop_category', 'category': 'items'}), 'color': 'primary'},
+            {'label': '💎 VIP Статусы', 'payload': json.dumps({'action': 'shop_category', 'category': 'vip'}), 'color': 'positive'},
+            {'label': '⛏️ Майнер BTC', 'payload': json.dumps({'action': 'buy_item', 'item': 'bitcoin_miner'}), 'color': 'primary'}
+        ]
+        return self.create_callback_keyboard(buttons)
     
-    def create_clothes_keyboard(self):
+    def create_shop_items_keyboard(self, category, items):
+        """Создание клавиатуры для товаров в категории"""
         buttons = []
-        for clothes, price in self.inline_shop['clothes'].items():
-            buttons.append({'text': f"{clothes} - {price}$", 'color': 'primary'})
-        return self.create_inline_keyboard(buttons)
-    
-    def create_items_keyboard(self):
-        buttons = []
-        for item, price in self.inline_shop['items'].items():
-            buttons.append({'text': f"{item} - {price}$", 'color': 'primary'})
-        return self.create_inline_keyboard(buttons)
+        for item_name, price in items.items():
+            buttons.append({
+                'label': f"{item_name} - {price}$",
+                'payload': json.dumps({'action': 'buy_item', 'item': item_name}),
+                'color': 'primary'
+            })
+        
+        buttons.append({
+            'label': '🔙 Назад в магазин',
+            'payload': json.dumps({'action': 'shop_back'}),
+            'color': 'secondary'
+        })
+        
+        return self.create_callback_keyboard(buttons)
     
     def create_vip_keyboard(self):
-        return self.create_inline_keyboard([
-            {'text': '🌟 VIP I - 5000₽', 'color': 'positive'},
-            {'text': '💎 VIP II - 15000₽', 'color': 'positive'},
-            {'text': '👑 VIP III - 35000₽', 'color': 'positive'}
-        ])
-    
-    def create_slave_keyboard(self):
-        return self.create_inline_keyboard([
-            {'text': '💰 Собрать прибыль', 'color': 'positive'},
-            {'text': '🔗 Надеть цепи', 'color': 'primary'},
-            {'text': '⬆️ Прокачать рабов', 'color': 'primary'},
-            {'text': '🆓 Выкупиться', 'color': 'negative'}
-        ], inline=False)
-    
-    def create_agent_keyboard(self, target_id, current_permissions=None):
-        if current_permissions is None:
-            self.cursor.execute('SELECT permissions FROM agent_permissions WHERE user_id = ?', (target_id,))
-            result = self.cursor.fetchone()
-            if result:
-                current_permissions = json.loads(result[0])
-            else:
-                current_permissions = {}
-        
-        buttons = []
-        perms = [
-            ('reports', 'Доступ к /reports'),
-            ('agent', 'Управление агентами (/agent)'),
-            ('givemoney', 'Выдача денег'),
-            ('givevip', 'Выдача VIP'),
-            ('sysban', 'Системный бан'),
-            ('sysrole', 'Системная роль'),
-            ('sysinfo', 'Системная информация'),
-            ('botadmins', 'Список агентов'),
-            ('snick', 'Установка ника'),
-            ('rnick', 'Удаление ника'),
-            ('delkick', 'Кик забаненных'),
-            ('mutereports', 'Мут репортов'),
-            ('unmutereports', 'Размут репортов')
+        """Создание клавиатуры для выбора VIP статуса"""
+        buttons = [
+            {'label': '🌟 VIP I - 5000₽', 'payload': json.dumps({'action': 'buy_vip', 'level': 1}), 'color': 'positive'},
+            {'label': '💎 VIP II - 15000₽', 'payload': json.dumps({'action': 'buy_vip', 'level': 2}), 'color': 'positive'},
+            {'label': '👑 VIP III - 35000₽', 'payload': json.dumps({'action': 'buy_vip', 'level': 3}), 'color': 'positive'},
+            {'label': '🔙 Назад в магазин', 'payload': json.dumps({'action': 'shop_back'}), 'color': 'secondary'}
         ]
-        
-        for perm, name in perms:
-            status = "✅" if current_permissions.get(perm, False) else "❌"
-            buttons.append({'text': f"{status} {name}", 'color': 'primary'})
-        
-        return self.create_inline_keyboard(buttons)
+        return self.create_callback_keyboard(buttons)
     
-    def create_sysban_keyboard(self):
-        return self.create_inline_keyboard([
-            {'text': '1️⃣ Стадия 1 - Полный ЧС', 'color': 'negative'},
-            {'text': '2️⃣ Стадия 2 - Запрет команд', 'color': 'negative'},
-            {'text': '3️⃣ Стадия 3 - Слив денег', 'color': 'negative'},
-            {'text': '4️⃣ Стадия 4 - Анулировать аккаунт', 'color': 'negative'},
-            {'text': 'ℹ️ Информация о стадиях', 'color': 'primary'}
-        ])
+    def create_vip_info_keyboard(self, level, price):
+        """Создание клавиатуры с информацией о VIP и кнопкой покупки"""
+        buttons = [
+            {'label': '💎 Купить', 'payload': json.dumps({'action': 'confirm_buy_vip', 'level': level}), 'color': 'positive'},
+            {'label': '🔙 Назад', 'payload': json.dumps({'action': 'vip_back'}), 'color': 'secondary'}
+        ]
+        return self.create_callback_keyboard(buttons)
     
-    def create_sysinfo_keyboard(self, target_id):
-        self.sysinfo_target[target_id] = target_id
-        return self.create_inline_keyboard([
-            {'text': '1️⃣ Информация о пользователе', 'color': 'primary'},
-            {'text': '2️⃣ В каких чатах пользователь', 'color': 'primary'},
-            {'text': '3️⃣ В каких чатах владелец', 'color': 'primary'},
-            {'text': 'ℹ️ Что означают цифры', 'color': 'secondary'}
-        ])
+    def create_ping_keyboard(self):
+        """Создание клавиатуры для /ping с кнопкой обновления"""
+        buttons = [
+            {'label': '🔄 Обновить', 'payload': json.dumps({'action': 'ping_refresh'}), 'color': 'primary'}
+        ]
+        return self.create_callback_keyboard(buttons)
+    
+    def create_botadmins_keyboard(self):
+        """Создание клавиатуры для /botadmins"""
+        agents = self.get_all_agents()
+        buttons = []
+        
+        for agent_id, name, agent_number, tickets, rating in agents:
+            buttons.append({
+                'label': f"#{agent_number} - {self.get_user_name(agent_id)}",
+                'payload': json.dumps({'action': 'show_agent_stats', 'agent_id': agent_id}),
+                'color': 'primary'
+            })
+        
+        return self.create_callback_keyboard(buttons)
     
     def activate_chat(self, chat_id, user_id):
         try:
@@ -674,6 +674,8 @@ class VKChatManager:
                     VALUES (?, ?, ?, ?, ?, ?)
                 ''', (chat_id, f"Chat_{chat_id}", user_id, 1, current_time, current_time))
             
+            # Выдаём роль owner пользователю, который активировал беседу
+            self.cursor.execute('UPDATE users SET role = ? WHERE user_id = ?', ('owner', user_id))
             self.conn.commit()
             
             welcome_msg = (
@@ -1109,7 +1111,6 @@ class VKChatManager:
     # ==================== МОДЕРАЦИЯ ====================
     
     def ban_user(self, user_id, admin_id, chat_id, reason=None):
-        """Бан пользователя с отображением имени"""
         try:
             self.vk_api.messages.removeChatUser(chat_id=chat_id, user_id=user_id)
             
@@ -1132,7 +1133,6 @@ class VKChatManager:
             return False
     
     def mute_user(self, user_id, admin_id, chat_id, minutes=None):
-        """Мут пользователя с отображением имени"""
         if not minutes:
             minutes = self.config['mute_time']
         
@@ -1155,7 +1155,6 @@ class VKChatManager:
         threading.Timer(minutes * 60, self.unmute_user, args=[user_id]).start()
     
     def unmute_user(self, user_id):
-        """Снятие мута"""
         self.cursor.execute('''
             UPDATE users 
             SET is_muted = 0, mute_until = NULL
@@ -1164,7 +1163,6 @@ class VKChatManager:
         self.conn.commit()
     
     def add_warn(self, user_id, admin_id, chat_id, reason=None):
-        """Добавление варна"""
         user = self.get_user(user_id)
         warns = user[10] + 1
         
@@ -1215,7 +1213,6 @@ class VKChatManager:
         return permission == 'reports'
     
     def can_manage_agents(self, user_id):
-        """Может ли пользователь управлять агентами (add/del/info/изменять права)"""
         if self.is_super_admin(user_id):
             return True
         return self.has_agent_permission(user_id, 'agent')
@@ -1315,19 +1312,19 @@ class VKChatManager:
         info += f"👤 {self.get_user_link(target_id)}\n\n"
         
         perm_names = {
-            'reports': 'Доступ к /reports',
-            'agent': 'Управление агентами (/agent)',
-            'givemoney': 'Выдача денег',
-            'givevip': 'Выдача VIP',
-            'sysban': 'Системный бан',
-            'sysrole': 'Системная роль',
-            'sysinfo': 'Системная информация',
-            'botadmins': 'Список агентов',
-            'snick': 'Установка ника',
-            'rnick': 'Удаление ника',
-            'delkick': 'Кик забаненных',
-            'mutereports': 'Мут репортов',
-            'unmutereports': 'Размут репортов'
+            'reports': '📋 Доступ к /reports',
+            'agent': '👑 Управление агентами',
+            'givemoney': '💰 Выдача денег',
+            'givevip': '💎 Выдача VIP',
+            'sysban': '🔨 Системный бан',
+            'sysrole': '⭐ Системная роль',
+            'sysinfo': 'ℹ️ Системная информация',
+            'botadmins': '👥 Список агентов',
+            'snick': '📝 Установка ника',
+            'rnick': '🗑️ Удаление ника',
+            'delkick': '🚪 Кик забаненных',
+            'mutereports': '🔇 Мут репортов',
+            'unmutereports': '🔊 Размут репортов'
         }
         
         for perm_key, perm_name in perm_names.items():
@@ -1379,6 +1376,20 @@ class VKChatManager:
             
             info += f"Права: {has_reports} {has_sysban} {has_givemoney}\n"
             info += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+        return info
+    
+    def get_agent_stats_for_user(self, agent_id):
+        user = self.get_user(agent_id)
+        agent_number = user[21] or 0
+        tickets = user[22] or 0
+        rating = user[23] or 0
+        
+        info = f"👑 **Статистика агента #{agent_number}**\n"
+        info += f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        info += f"👤 {self.get_user_link(agent_id)}\n"
+        info += f"📊 Всего обработано: {tickets}\n"
+        info += f"⭐ Средний рейтинг: {rating:.1f}/5\n"
         
         return info
     
@@ -1758,7 +1769,6 @@ class VKChatManager:
     # ==================== КОМАНДЫ С УПОМИНАНИЯМИ ====================
     
     def snick_command(self, admin_id, target_id, nickname, chat_id=None):
-        """Установка ника пользователю (с поддержкой упоминаний)"""
         if not self.has_agent_permission(admin_id, 'snick'):
             return False, "❌ У вас нет доступа к команде /snick!"
         
@@ -1772,7 +1782,6 @@ class VKChatManager:
         return True, msg
     
     def rnick_command(self, admin_id, target_id, chat_id=None):
-        """Удаление ника пользователя (с поддержкой упоминаний)"""
         if not self.has_agent_permission(admin_id, 'rnick'):
             return False, "❌ У вас нет доступа к команде /rnick!"
         
@@ -1786,7 +1795,6 @@ class VKChatManager:
         return True, msg
     
     def delkick_command(self, admin_id, chat_id=None):
-        """Кик забаненных пользователей"""
         if not self.has_agent_permission(admin_id, 'delkick'):
             return False, "❌ У вас нет доступа к команде /delkick!"
         
@@ -1814,7 +1822,6 @@ class VKChatManager:
         return True, msg
     
     def nonames_command(self, admin_id, chat_id=None):
-        """Список пользователей без ников"""
         if not self.has_agent_permission(admin_id, 'snick'):
             return False, "❌ У вас нет доступа к команде /nonames!"
         
@@ -1835,7 +1842,6 @@ class VKChatManager:
         return True, msg
     
     def ponicku_command(self, admin_id, search_part, chat_id=None):
-        """Поиск пользователей по части ника"""
         if not self.has_agent_permission(admin_id, 'snick'):
             return False, "❌ У вас нет доступа к команде /ponicku!"
         
@@ -1857,7 +1863,6 @@ class VKChatManager:
         return True, msg
     
     def mutereports_command(self, admin_id, target_id, chat_id=None):
-        """Мут репортов пользователя (с поддержкой упоминаний)"""
         if not self.has_agent_permission(admin_id, 'mutereports'):
             return False, "❌ У вас нет доступа к команде /mutereports!"
         
@@ -1871,7 +1876,6 @@ class VKChatManager:
         return True, msg
     
     def unmutereports_command(self, admin_id, target_id, chat_id=None):
-        """Размут репортов пользователя (с поддержкой упоминаний)"""
         if not self.has_agent_permission(admin_id, 'unmutereports'):
             return False, "❌ У вас нет доступа к команде /unmutereports!"
         
@@ -1885,7 +1889,6 @@ class VKChatManager:
         return True, msg
     
     def give_money_command(self, admin_id, target_id, currency, amount, chat_id=None):
-        """Выдача денег пользователю (с поддержкой упоминаний)"""
         if not self.has_agent_permission(admin_id, 'givemoney'):
             return False, "❌ У вас нет доступа к команде /givemoney!"
         
@@ -1905,7 +1908,6 @@ class VKChatManager:
         return True, msg
     
     def give_vip_command(self, admin_id, target_id, level, chat_id=None):
-        """Выдача VIP статуса пользователю (с поддержкой упоминаний)"""
         if not self.has_agent_permission(admin_id, 'givevip'):
             return False, "❌ У вас нет доступа к команде /givevip!"
         
@@ -2078,7 +2080,7 @@ class VKChatManager:
                         self.send_message("❌ Неверный ID! Введите числовой ID.", chat_id)
                     return
                 
-                # ========== КОМАНДЫ ДЛЯ АГЕНТОВ ==========
+                # ========== КОМАНДЫ ==========
                 
                 if text in self.commands['rates']:
                     info = self.get_exchange_rates_info()
@@ -2101,305 +2103,52 @@ class VKChatManager:
                 
                 # Команда /agent - управление агентами
                 if text in self.commands['agent']:
-                    # Проверяем, может ли пользователь управлять агентами
                     if not self.can_manage_agents(user_id):
                         self.send_message("❌ У вас нет доступа к команде /agent!", chat_id)
                         return
                     
-                    parts = text.split()
-                    if len(parts) >= 3:
-                        if parts[1] == 'add':
-                            try:
-                                target_id = int(parts[2])
-                                success, msg = self.add_agent(user_id, target_id)
-                                self.send_message(msg, chat_id)
-                            except ValueError:
-                                self.send_message("❌ Неверный ID!", chat_id)
-                            return
-                        elif parts[1] == 'del':
-                            try:
-                                target_id = int(parts[2])
-                                success, msg = self.del_agent(user_id, target_id)
-                                self.send_message(msg, chat_id)
-                            except ValueError:
-                                self.send_message("❌ Неверный ID!", chat_id)
-                            return
-                        elif parts[1] == 'info':
-                            try:
-                                target_id = int(parts[2])
-                                info = self.get_agent_info(user_id, target_id)
-                                self.send_message(info, chat_id)
-                            except ValueError:
-                                self.send_message("❌ Неверный ID!", chat_id)
-                            return
-                        elif parts[1] == 'set' and len(parts) >= 5:
-                            try:
-                                target_id = int(parts[2])
-                                permission = parts[3]
-                                value = parts[4].lower() == 'true'
-                                success, msg = self.update_agent_permissions(user_id, target_id, permission, value)
-                                self.send_message(msg, chat_id)
-                            except ValueError:
-                                self.send_message("❌ Неверный формат!", chat_id)
-                            return
-                        else:
-                            self.send_message("❌ Неизвестная подкоманда! Доступны: add, del, info, set", chat_id)
-                    else:
-                        self.send_message("🔧 **Управление агентами**\n\nИспользование:\n/agent add [id]\n/agent del [id]\n/agent info [id]\n/agent set [id] [право] [true/false]\n\nДоступные права: reports, agent, givemoney, givevip, sysban, sysrole, sysinfo, botadmins, snick, rnick, delkick, mutereports, unmutereports", chat_id)
+                    self.send_message("🔧 **Управление правами агентов**\n\nВведите ID агента для настройки:", chat_id)
+                    self.waiting_for_agent_id[user_id] = True
                     return
                 
-                if text in self.commands['botadmins'] and self.has_agent_permission(user_id, 'botadmins'):
-                    info = self.get_bot_admins(user_id)
-                    self.send_message(info, chat_id)
-                    return
-                
-                # ========== КОМАНДЫ С УПОМИНАНИЯМИ ==========
-                
-                # /snick - установка ника
-                if text in self.commands['snick']:
-                    if not self.has_agent_permission(user_id, 'snick'):
-                        self.send_message("❌ У вас нет доступа к команде /snick!", chat_id)
+                if text in self.commands['botadmins']:
+                    if not self.is_agent(user_id):
+                        self.send_message("❌ Вы не являетесь агентом!", chat_id)
                         return
                     
-                    parts = text.split(maxsplit=2)
-                    if len(parts) >= 2:
-                        # Пробуем извлечь ID из первого аргумента
-                        target_id = self.extract_user_id(parts[1], message.get('reply_message'))
+                    agents = self.get_all_agents()
+                    if agents:
+                        info = "👑 **Список агентов поддержки**\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                        for agent_id, name, agent_number, tickets, rating in agents:
+                            info += f"**#{agent_number}** | {self.get_user_link(agent_id)}\n"
+                            info += f"📊 Тикетов: {tickets} | Рейтинг: {rating:.1f}⭐\n"
+                            info += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
                         
-                        if target_id:
-                            nickname = parts[2] if len(parts) > 2 else ""
-                            if nickname:
-                                success, msg = self.snick_command(user_id, target_id, nickname, chat_id)
-                                self.send_message(msg, chat_id)
-                            else:
-                                self.send_message("❌ Использование: /snick [пользователь] [ник]\n\nПримеры:\n/snick @id123 Иван\n/snick [id123|Иван] Иван\n/snick id123 Иван\n(ответ на сообщение пользователя) /snick Иван", chat_id)
-                        else:
-                            self.send_message("❌ Пользователь не найден! Используйте:\n/snick [id] [ник]\n/snick @id123 Иван\n/snick [id123|Иван] Иван\nИли ответьте на сообщение пользователя и напишите /snick [ник]", chat_id)
+                        keyboard = self.create_botadmins_keyboard()
+                        self.send_message(info, chat_id, keyboard=keyboard)
                     else:
-                        self.send_message("❌ Использование: /snick [пользователь] [ник]\n\nПримеры:\n/snick @id123 Иван\n/snick [id123|Иван] Иван\n/snick id123 Иван\n(ответ на сообщение пользователя) /snick Иван", chat_id)
-                    return
-                
-                # /rnick - удаление ника
-                if text in self.commands['rnick']:
-                    if not self.has_agent_permission(user_id, 'rnick'):
-                        self.send_message("❌ У вас нет доступа к команде /rnick!", chat_id)
-                        return
-                    
-                    parts = text.split(maxsplit=1)
-                    target_id = None
-                    
-                    if len(parts) > 1:
-                        target_id = self.extract_user_id(parts[1], message.get('reply_message'))
-                    else:
-                        target_id = self.extract_user_id('', message.get('reply_message'))
-                    
-                    if target_id:
-                        success, msg = self.rnick_command(user_id, target_id, chat_id)
-                        self.send_message(msg, chat_id)
-                    else:
-                        self.send_message("❌ Пользователь не найден! Используйте:\n/rnick [id]\n/rnick @id123\n/rnick [id123|Иван]\nИли ответьте на сообщение пользователя и напишите /rnick", chat_id)
-                    return
-                
-                # /delkick - кик забаненных
-                if text in self.commands['delkick']:
-                    success, msg = self.delkick_command(user_id, chat_id)
-                    self.send_message(msg, chat_id)
-                    return
-                
-                # /nonames - список без ников
-                if text in self.commands['nonames']:
-                    success, msg = self.nonames_command(user_id, chat_id)
-                    self.send_message(msg, chat_id)
-                    return
-                
-                # /ponicku - поиск по нику
-                if text in self.commands['ponicku']:
-                    if not self.has_agent_permission(user_id, 'snick'):
-                        self.send_message("❌ У вас нет доступа к команде /ponicku!", chat_id)
-                        return
-                    
-                    parts = text.split(maxsplit=1)
-                    if len(parts) > 1:
-                        search_part = parts[1]
-                        success, msg = self.ponicku_command(user_id, search_part, chat_id)
-                        self.send_message(msg, chat_id)
-                    else:
-                        self.send_message("❌ Использование: /ponicku [часть ника]", chat_id)
-                    return
-                
-                # /mutereports - мут репортов
-                if text in self.commands['mutereports']:
-                    if not self.has_agent_permission(user_id, 'mutereports'):
-                        self.send_message("❌ У вас нет доступа к команде /mutereports!", chat_id)
-                        return
-                    
-                    parts = text.split(maxsplit=1)
-                    target_id = None
-                    
-                    if len(parts) > 1:
-                        target_id = self.extract_user_id(parts[1], message.get('reply_message'))
-                    else:
-                        target_id = self.extract_user_id('', message.get('reply_message'))
-                    
-                    if target_id:
-                        success, msg = self.mutereports_command(user_id, target_id, chat_id)
-                        self.send_message(msg, chat_id)
-                    else:
-                        self.send_message("❌ Пользователь не найден! Используйте:\n/mutereports [id]\n/mutereports @id123\nИли ответьте на сообщение пользователя и напишите /mutereports", chat_id)
-                    return
-                
-                # /unmutereports - размут репортов
-                if text in self.commands['unmutereports']:
-                    if not self.has_agent_permission(user_id, 'unmutereports'):
-                        self.send_message("❌ У вас нет доступа к команде /unmutereports!", chat_id)
-                        return
-                    
-                    parts = text.split(maxsplit=1)
-                    target_id = None
-                    
-                    if len(parts) > 1:
-                        target_id = self.extract_user_id(parts[1], message.get('reply_message'))
-                    else:
-                        target_id = self.extract_user_id('', message.get('reply_message'))
-                    
-                    if target_id:
-                        success, msg = self.unmutereports_command(user_id, target_id, chat_id)
-                        self.send_message(msg, chat_id)
-                    else:
-                        self.send_message("❌ Пользователь не найден! Используйте:\n/unmutereports [id]\n/unmutereports @id123\nИли ответьте на сообщение пользователя и напишите /unmutereports", chat_id)
-                    return
-                
-                # /givemoney - выдача денег
-                if text in self.commands['givemoney']:
-                    if not self.has_agent_permission(user_id, 'givemoney'):
-                        self.send_message("❌ У вас нет доступа к команде /givemoney!", chat_id)
-                        return
-                    
-                    parts = text.split()
-                    if len(parts) >= 4:
-                        target_id = self.extract_user_id(parts[1], message.get('reply_message'))
-                        if target_id:
-                            currency = parts[2]
-                            try:
-                                amount = float(parts[3])
-                                success, msg = self.give_money_command(user_id, target_id, currency, amount, chat_id)
-                                self.send_message(msg, chat_id)
-                            except ValueError:
-                                self.send_message("❌ Сумма должна быть числом!", chat_id)
-                        else:
-                            self.send_message("❌ Пользователь не найден!", chat_id)
-                    else:
-                        self.send_message("❌ Использование: /givemoney [пользователь] [валюта] [сумма]\nВалюты: rub, usd, eur, btc", chat_id)
-                    return
-                
-                # /givevip - выдача VIP
-                if text in self.commands['givevip']:
-                    if not self.has_agent_permission(user_id, 'givevip'):
-                        self.send_message("❌ У вас нет доступа к команде /givevip!", chat_id)
-                        return
-                    
-                    parts = text.split()
-                    if len(parts) >= 3:
-                        target_id = self.extract_user_id(parts[1], message.get('reply_message'))
-                        if target_id:
-                            try:
-                                level = int(parts[2])
-                                success, msg = self.give_vip_command(user_id, target_id, level, chat_id)
-                                self.send_message(msg, chat_id)
-                            except ValueError:
-                                self.send_message("❌ Уровень VIP должен быть числом (1-3)!", chat_id)
-                        else:
-                            self.send_message("❌ Пользователь не найден!", chat_id)
-                    else:
-                        self.send_message("❌ Использование: /givevip [пользователь] [уровень]\nУровни: 1, 2, 3", chat_id)
-                    return
-                
-                # /sysban - системный бан
-                if text in self.commands['sysban']:
-                    if not self.has_agent_permission(user_id, 'sysban'):
-                        self.send_message("❌ У вас нет доступа к команде /sysban!", chat_id)
-                        return
-                    
-                    parts = text.split()
-                    if len(parts) >= 3:
-                        target_id = self.extract_user_id(parts[1], message.get('reply_message'))
-                        if target_id:
-                            try:
-                                level = int(parts[2])
-                                reason = ' '.join(parts[3:]) if len(parts) > 3 else None
-                                success, msg = self.sysban_user(user_id, target_id, level, reason)
-                                self.send_message(msg, chat_id)
-                            except ValueError:
-                                self.send_message("❌ Стадия должна быть числом (1-4)!", chat_id)
-                        else:
-                            self.send_message("❌ Пользователь не найден!", chat_id)
-                    else:
-                        keyboard = self.create_sysban_keyboard()
-                        self.send_message("Выберите стадию бана:", chat_id, keyboard=keyboard)
-                    return
-                
-                # /sysunban - системный разбан
-                if text in self.commands['sysunban']:
-                    if not self.has_agent_permission(user_id, 'sysban'):
-                        self.send_message("❌ У вас нет доступа к команде /sysunban!", chat_id)
-                        return
-                    
-                    parts = text.split(maxsplit=1)
-                    target_id = None
-                    
-                    if len(parts) > 1:
-                        target_id = self.extract_user_id(parts[1], message.get('reply_message'))
-                    else:
-                        target_id = self.extract_user_id('', message.get('reply_message'))
-                    
-                    if target_id:
-                        success, msg = self.sysunban_user(user_id, target_id)
-                        self.send_message(msg, chat_id)
-                    else:
-                        self.send_message("❌ Пользователь не найден! Используйте:\n/sysunban [id]\n/sysunban @id123\nИли ответьте на сообщение пользователя и напишите /sysunban", chat_id)
-                    return
-                
-                # /sysrole - системная роль
-                if text in self.commands['sysrole']:
-                    if not self.has_agent_permission(user_id, 'sysrole'):
-                        self.send_message("❌ У вас нет доступа к команде /sysrole!", chat_id)
-                        return
-                    
-                    parts = text.split()
-                    if len(parts) >= 3:
-                        target_id = self.extract_user_id(parts[1], message.get('reply_message'))
-                        if target_id:
-                            role = parts[2]
-                            success, msg = self.sysrole_user(user_id, target_id, role, chat_id)
-                            self.send_message(msg, chat_id)
-                        else:
-                            self.send_message("❌ Пользователь не найден!", chat_id)
-                    else:
-                        self.send_message("❌ Использование: /sysrole [пользователь] [роль]", chat_id)
-                    return
-                
-                # /sysinfo - системная информация
-                if text in self.commands['sysinfo']:
-                    if not self.has_agent_permission(user_id, 'sysinfo'):
-                        self.send_message("❌ У вас нет доступа к команде /sysinfo!", chat_id)
-                        return
-                    
-                    parts = text.split(maxsplit=1)
-                    target_id = None
-                    
-                    if len(parts) > 1:
-                        target_id = self.extract_user_id(parts[1], message.get('reply_message'))
-                    else:
-                        target_id = self.extract_user_id('', message.get('reply_message'))
-                    
-                    if target_id:
-                        keyboard = self.create_sysinfo_keyboard(target_id)
-                        self.send_message(f"📋 **Системная информация о {self.get_user_link(target_id)}**\n\nВыберите опцию:", chat_id, keyboard=keyboard)
-                    else:
-                        self.send_message("❌ Пользователь не найден! Используйте:\n/sysinfo [id]\n/sysinfo @id123\nИли ответьте на сообщение пользователя и напишите /sysinfo", chat_id)
+                        self.send_message("📋 Список агентов пуст.", chat_id)
                     return
                 
                 # ========== ОБЫЧНЫЕ КОМАНДЫ ==========
+                
+                if text in self.commands['ping']:
+                    start_time = time.time()
+                    response_time = (time.time() - start_time) * 1000
+                    
+                    msg = f"🏓 **Бот работает!**\n"
+                    msg += f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    msg += f"⏱️ Пинг: {response_time:.2f} мс\n"
+                    msg += f"🔄 Статус: ✅ Активен"
+                    
+                    keyboard = self.create_ping_keyboard()
+                    self.send_message(msg, chat_id, keyboard=keyboard)
+                    return
+                
+                if text in self.commands['shop']:
+                    keyboard = self.create_shop_category_keyboard()
+                    self.send_message("🛒 **Магазин**\n━━━━━━━━━━━━━━━━━━\n💰 Валюта: Доллары ($)\n\nВыберите категорию:", chat_id, keyboard=keyboard)
+                    return
                 
                 if text in self.commands['help']:
                     help_msg = (
@@ -2468,13 +2217,6 @@ class VKChatManager:
                     self.send_message("🔄 **Система рабов**\n\nВыберите действие:", chat_id, keyboard=keyboard)
                     return
                 
-                if text in self.commands['ping']:
-                    start_time = time.time()
-                    self.send_message("🏓 Понг!", chat_id)
-                    response_time = (time.time() - start_time) * 1000
-                    self.send_message(f"⏱️ Время ответа: {response_time:.2f} мс", chat_id)
-                    return
-                
                 if text in self.commands['stats']:
                     stats = self.get_user_stats_detailed(user_id, chat_id)
                     self.send_message(stats, chat_id)
@@ -2482,8 +2224,7 @@ class VKChatManager:
                 
                 if text in self.commands['vip']:
                     vip_info = self.get_vip_info(user_id)
-                    keyboard = self.create_inline_keyboard([{'text': '💎 Купить VIP', 'color': 'primary'}])
-                    self.send_message(vip_info, chat_id, keyboard=keyboard)
+                    self.send_message(vip_info, chat_id)
                     return
                 
                 if text in self.commands['staff']:
@@ -2493,8 +2234,7 @@ class VKChatManager:
                         for member in staff:
                             role_emoji = self.status_emojis.get(member['role'], '👤')
                             staff_text += f"{role_emoji} {self.get_user_link(member['id'])} - {member['role'].upper()}\n"
-                        keyboard = self.create_staff_keyboard()
-                        self.send_message(staff_text, chat_id, keyboard=keyboard)
+                        self.send_message(staff_text, chat_id)
                     else:
                         self.send_message("👥 Персонал отсутствует.", chat_id)
                     return
@@ -2621,15 +2361,6 @@ class VKChatManager:
                     self.send_message(msg, chat_id)
                     return
                 
-                if text in self.commands['shop']:
-                    shop_text = "🛒 **Магазин**\n━━━━━━━━━━━━━━━━━━\n"
-                    shop_text += "📱 Телефоны\n🏠 Дома\n👕 Одежда\n🎁 Вещи\n💎 VIP Статусы\n⛏️ Майнер BTC\n\n"
-                    shop_text += "💰 Валюта: Доллары ($)\n\n"
-                    shop_text += "Выберите категорию:"
-                    keyboard = self.create_shop_keyboard()
-                    self.send_message(shop_text, chat_id, keyboard=keyboard)
-                    return
-                
                 if text in self.commands['buy']:
                     parts = text.split()
                     if len(parts) >= 2:
@@ -2665,110 +2396,129 @@ class VKChatManager:
         if event.type == VkBotEventType.MESSAGE_EVENT:
             payload = event.object.payload
             user_id = event.object.user_id
+            chat_id = event.object.peer_id - 2000000000 if event.object.peer_id > 2000000000 else None
             
-            if 'payload' in payload:
-                data = payload['payload']
+            try:
+                if isinstance(payload, str):
+                    data = json.loads(payload)
+                else:
+                    data = payload
                 
-                if data.startswith('agent_perm_') and self.can_manage_agents(user_id):
-                    parts = data.split('_')
-                    if len(parts) >= 4:
-                        target_id = int(parts[2])
-                        permission = parts[3]
-                        current_value = parts[4] == 'true' if len(parts) > 4 else False
-                        new_value = not current_value
-                        success, msg = self.update_agent_permissions(user_id, target_id, permission, new_value)
-                        keyboard = self.create_agent_keyboard(target_id)
-                        self.send_message(msg, user_id=user_id, keyboard=keyboard)
+                action = data.get('action')
                 
-                elif data.startswith('sysban_stage_'):
-                    stage = int(data.split('_')[2])
-                    stage_info = f"**Стадия {stage}:**\n━━━━━━━━━━━━━━━━━━━━━━\n"
-                    if stage == 1:
-                        stage_info += "1️⃣ Полный ЧС бота\n• Нет доступа к боту\n• Кикает при добавлении в беседу\n\n"
-                    elif stage == 2:
-                        stage_info += "2️⃣ Запрет доступа к командам\n• Не кикает из беседы\n• Не дает пользоваться командами\n\n"
-                    elif stage == 3:
-                        stage_info += "3️⃣ Слив денег\n• То же, что полный ЧС бота\n• Обнуление баланса\n\n"
-                    elif stage == 4:
-                        stage_info += "4️⃣ Анулировать аккаунт\n• Снятие агента\n• Снятие всех денег\n• Сброс всех данных\n\n"
-                    stage_info += "Используйте: /sysban [id] [стадия] [причина]"
-                    self.send_message(stage_info, user_id=user_id)
+                # Обработка управления правами агента
+                if action == 'agent_toggle_perm':
+                    target_id = data.get('target_id')
+                    permission = data.get('permission')
+                    current = data.get('current', False)
+                    
+                    if self.can_manage_agents(user_id):
+                        success, msg = self.update_agent_permissions(user_id, target_id, permission, not current)
+                        self.send_message(msg, user_id=user_id)
+                        
+                        # Обновляем клавиатуру
+                        self.cursor.execute('SELECT permissions FROM agent_permissions WHERE user_id = ?', (target_id,))
+                        result = self.cursor.fetchone()
+                        perms = json.loads(result[0]) if result else {}
+                        keyboard = self.create_agent_permissions_keyboard(target_id, perms)
+                        self.send_message(f"🔧 **Настройка прав агента #{self.get_agent_number(target_id)}**\n\nВыберите доступ для изменения:", user_id=user_id, keyboard=keyboard)
+                    return
                 
-                elif data.startswith('sysinfo_opt_'):
-                    option = int(data.split('_')[2])
-                    if user_id in self.sysinfo_target:
-                        target_id = self.sysinfo_target[user_id]
-                        if option == 1:
-                            info = self.sysinfo_user(user_id, target_id)
-                        elif option == 2:
-                            info = self.get_user_chats(user_id, target_id)
-                        elif option == 3:
-                            info = self.get_owner_chats(user_id, target_id)
-                        elif option == 4:
-                            info = self.get_sysinfo_help()
-                        self.send_message(info, user_id=user_id)
+                elif action == 'agent_back':
+                    self.send_message("🔧 **Управление правами агентов**\n\nВведите ID агента для настройки:", user_id=user_id)
+                    return
                 
-                elif data.startswith('shop_'):
-                    category = data.split('_')[1]
-                    if category == 'phones':
-                        keyboard = self.create_phones_keyboard()
-                        self.send_message("📱 **Выберите телефон:**", user_id=user_id, keyboard=keyboard)
-                    elif category == 'houses':
-                        keyboard = self.create_houses_keyboard()
-                        self.send_message("🏠 **Выберите дом:**", user_id=user_id, keyboard=keyboard)
-                    elif category == 'clothes':
-                        keyboard = self.create_clothes_keyboard()
-                        self.send_message("👕 **Выберите одежду:**", user_id=user_id, keyboard=keyboard)
-                    elif category == 'items':
-                        keyboard = self.create_items_keyboard()
-                        self.send_message("🎁 **Выберите вещь:**", user_id=user_id, keyboard=keyboard)
-                    elif category == 'vip':
+                # Обработка магазина
+                elif action == 'shop_category':
+                    category = data.get('category')
+                    if category == 'vip':
                         keyboard = self.create_vip_keyboard()
-                        self.send_message("💎 **Выберите VIP статус:**\n\n🌟 VIP I - 5000₽\n💎 VIP II - 15000₽\n👑 VIP III - 35000₽\n\nДействует 30 дней", user_id=user_id, keyboard=keyboard)
-                    elif category == 'miner':
-                        success, msg = self.buy_item(user_id, 'Майнер биткойнов', 500)
-                        self.send_message(msg, user_id=user_id)
-                
-                elif data.startswith('buy_'):
-                    item = data.split('_', 1)[1]
-                    if item in self.inline_shop['phones']:
-                        price = self.inline_shop['phones'][item]
-                        success, msg = self.buy_item(user_id, item, price)
-                        self.send_message(msg, user_id=user_id)
-                    elif item in self.inline_shop['houses']:
-                        price = self.inline_shop['houses'][item]
-                        success, msg = self.buy_item(user_id, item, price)
-                        self.send_message(msg, user_id=user_id)
-                    elif item in self.inline_shop['clothes']:
-                        price = self.inline_shop['clothes'][item]
-                        success, msg = self.buy_item(user_id, item, price)
-                        self.send_message(msg, user_id=user_id)
-                    elif item in self.inline_shop['items']:
-                        price = self.inline_shop['items'][item]
-                        success, msg = self.buy_item(user_id, item, price)
-                        self.send_message(msg, user_id=user_id)
-                    elif item.startswith('vip'):
-                        level = int(item[3:])
-                        success, msg = self.buy_vip(user_id, level)
-                        self.send_message(msg, user_id=user_id)
-                
-                elif data.startswith('slave_'):
-                    action = data.split('_')[1]
-                    result = self.handle_slave_system(user_id, action)
-                    self.send_message(result, user_id=user_id)
-                
-                elif data == 'show_nicks':
-                    staff = self.get_staff_list()
-                    if staff:
-                        staff_text = "👥 **Персонал (с никами):**\n━━━━━━━━━━━━━━━━━━\n"
-                        for member in staff:
-                            user = self.get_user(member['id'])
-                            nickname = user[24] or member['name']
-                            role_emoji = self.status_emojis.get(member['role'], '👤')
-                            staff_text += f"{role_emoji} {self.get_user_link(member['id'])} - {member['role'].upper()}\n"
-                        self.send_message(staff_text, user_id=user_id)
+                        self.send_message("💎 **Выберите VIP статус:**\n\n🌟 VIP I - 5000₽\n💎 VIP II - 15000₽\n👑 VIP III - 35000₽\n\nДействует 30 дней", chat_id, keyboard=keyboard)
                     else:
-                        self.send_message("👥 Персонал отсутствует.", user_id=user_id)
+                        items = self.inline_shop.get(category, {})
+                        if items:
+                            keyboard = self.create_shop_items_keyboard(category, items)
+                            category_names = {'phones': 'Телефоны', 'houses': 'Дома', 'clothes': 'Одежда', 'items': 'Вещи'}
+                            self.send_message(f"📱 **{category_names.get(category, category)}**\n\nВыберите товар:", chat_id, keyboard=keyboard)
+                    return
+                
+                elif action == 'shop_back':
+                    keyboard = self.create_shop_category_keyboard()
+                    self.send_message("🛒 **Магазин**\n━━━━━━━━━━━━━━━━━━\n💰 Валюта: Доллары ($)\n\nВыберите категорию:", chat_id, keyboard=keyboard)
+                    return
+                
+                elif action == 'buy_vip':
+                    level = data.get('level')
+                    price = self.shop_items[f'vip{level}']['price']
+                    benefits = self.shop_items[f'vip{level}']['benefits']
+                    
+                    info = f"💎 **VIP {level} уровня**\n━━━━━━━━━━━━━━━━━━\n"
+                    info += f"💰 Цена: {price}₽\n"
+                    info += f"📅 Действует: 30 дней\n\n"
+                    info += f"📊 **Преимущества:**\n"
+                    info += f"• 🏢 Объединений: {benefits['max_unions']}\n"
+                    info += f"• 💬 Бесед: {benefits['max_chats']}\n"
+                    info += f"• 📢 Команд !скажи: {benefits['daily_say']}/день"
+                    
+                    keyboard = self.create_vip_info_keyboard(level, price)
+                    self.send_message(info, chat_id, keyboard=keyboard)
+                    return
+                
+                elif action == 'confirm_buy_vip':
+                    level = data.get('level')
+                    success, msg = self.buy_vip(user_id, level)
+                    self.send_message(msg, chat_id)
+                    
+                    # Возврат в магазин
+                    keyboard = self.create_shop_category_keyboard()
+                    self.send_message("🛒 **Магазин**\n━━━━━━━━━━━━━━━━━━\n💰 Валюта: Доллары ($)\n\nВыберите категорию:", chat_id, keyboard=keyboard)
+                    return
+                
+                elif action == 'vip_back':
+                    keyboard = self.create_vip_keyboard()
+                    self.send_message("💎 **Выберите VIP статус:**\n\n🌟 VIP I - 5000₽\n💎 VIP II - 15000₽\n👑 VIP III - 35000₽\n\nДействует 30 дней", chat_id, keyboard=keyboard)
+                    return
+                
+                elif action == 'buy_item':
+                    item = data.get('item')
+                    if item == 'bitcoin_miner':
+                        success, msg = self.buy_item(user_id, 'Майнер биткойнов', 500)
+                        self.send_message(msg, chat_id)
+                    else:
+                        # Поиск цены товара
+                        price = None
+                        for category in self.inline_shop.values():
+                            if item in category:
+                                price = category[item]
+                                break
+                        if price:
+                            success, msg = self.buy_item(user_id, item, price)
+                            self.send_message(msg, chat_id)
+                    return
+                
+                # Обработка /ping обновления
+                elif action == 'ping_refresh':
+                    start_time = time.time()
+                    response_time = (time.time() - start_time) * 1000
+                    
+                    msg = f"🏓 **Бот работает!**\n"
+                    msg += f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    msg += f"⏱️ Пинг: {response_time:.2f} мс\n"
+                    msg += f"🔄 Статус: ✅ Активен"
+                    
+                    keyboard = self.create_ping_keyboard()
+                    self.send_message(msg, chat_id, keyboard=keyboard)
+                    return
+                
+                # Обработка показа статистики агента
+                elif action == 'show_agent_stats':
+                    agent_id = data.get('agent_id')
+                    stats = self.get_agent_stats_for_user(agent_id)
+                    self.send_message(stats, chat_id)
+                    return
+                
+            except json.JSONDecodeError as e:
+                print(f"Ошибка парсинга callback payload: {e}")
     
     def run(self):
         print("🤖 Бот начал работу. Ожидание сообщений...")
@@ -2787,14 +2537,13 @@ class VKChatManager:
                 import traceback
                 traceback.print_exc()
 
+
 import os
 
 if __name__ == "__main__":
-    # Берем данные из переменных окружения (без значений по умолчанию)
     GROUP_TOKEN = os.getenv("VK_TOKEN")
     GROUP_ID = os.getenv("VK_GROUP_ID")
     
-    # Проверяем, что переменные заданы
     if not GROUP_TOKEN:
         print("❌ Ошибка: Переменная VK_TOKEN не найдена!")
         print("💡 Добавьте переменную окружения VK_TOKEN в настройках Bothost")
@@ -2805,7 +2554,6 @@ if __name__ == "__main__":
         print("💡 Добавьте переменную окружения VK_GROUP_ID в настройках Bothost")
         exit(1)
     
-    # Преобразуем GROUP_ID в число
     GROUP_ID = int(GROUP_ID)
     
     print(f"✅ Бот запускается с ID группы: {GROUP_ID}")

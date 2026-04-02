@@ -53,8 +53,9 @@ class VKChatManager:
         self.waiting_for_newrole = {}
         self.waiting_for_report_answer = {}
         self.pending_reports = {}
-
-self.commands = {
+        
+        # Словарь команд
+        self.commands = {
             'ban': ['/ban', '/бан', '!ban', '!бан'],
             'unban': ['/unban', '/разбан', '!unban', '!разбан'],
             'mute': ['/mute', '/мут', '!mute', '!мут'],
@@ -123,9 +124,288 @@ self.commands = {
             'union_kick': ['/union_kick', '/объединениекик'],
             'union_role': ['/union_role', '/объединениероль'],
         }
-def generate_invite_code(self, length=8):
+        
+        self.shop_items = {
+            'vip1': {'name': '🌟 VIP I уровня', 'price': 5000, 'type': 'vip', 'level': 1,
+                     'benefits': {'max_chats': 50, 'max_unions': 30, 'daily_say': 50}},
+            'vip2': {'name': '💎 VIP II уровня', 'price': 15000, 'type': 'vip', 'level': 2,
+                     'benefits': {'max_chats': 120, 'max_unions': 70, 'daily_say': 120}},
+            'vip3': {'name': '👑 VIP III уровня', 'price': 35000, 'type': 'vip', 'level': 3,
+                     'benefits': {'max_chats': 250, 'max_unions': 150, 'daily_say': 300}},
+            'bitcoin_miner': {'name': '⛏️ Майнер биткойнов', 'price': 5000, 'type': 'item', 'value': 'miner', 'hourly': 0.5},
+        }
+        
+        self.inline_shop = {
+            'phones': {'iPhone 15 Pro': 999, 'iPhone 15 Pro Max': 1199, 'Samsung Galaxy S24 Ultra': 1299,
+                       'Samsung Galaxy S24': 899, 'Google Pixel 8 Pro': 999, 'Google Pixel 8': 699,
+                       'Xiaomi 14 Ultra': 899, 'Xiaomi 14 Pro': 699, 'OnePlus 12': 749, 'Nothing Phone 2': 599},
+            'houses': {'🏠 Квартира-студия': 50000, '🏡 1-комнатная квартира': 100000, '🏘️ 2-комнатная квартира': 200000,
+                       '🏠 Загородный дом': 500000, '🏢 Пентхаус': 1000000, '🏰 Особняк': 5000000, '🏝️ Вилла на острове': 10000000},
+            'clothes': {'👕 Футболка': 50, '👖 Джинсы': 100, '👔 Костюм': 500, '👟 Кроссовки': 150,
+                        '🧥 Пальто': 300, '🧢 Кепка': 30, '🧣 Шарф': 40, '🧤 Перчатки': 35,
+                        '👗 Платье': 250, '👘 Халат': 80},
+            'items': {'💍 Кольцо': 200, '⌚ Часы': 500, '💎 Бриллиант': 1000, '🎮 Игровая приставка': 400,
+                      '📚 Книга': 30, '💻 Ноутбук': 800, '📱 Смартфон': 600, '🎧 Наушники': 100,
+                      '📷 Фотоаппарат': 450, '🚗 Машина': 5000}
+        }
+        
+        self.status_emojis = {'user': '👤', 'moderator': '🛡️', 'admin': '⚡', 'owner': '👑'}
+        self.suspicious_logs = []
+        print("🤖 Бот успешно запущен!")
+    
+    def init_database(self):
+        self.conn = sqlite3.connect('vk_bot.db', check_same_thread=False)
+        self.cursor = self.conn.cursor()
+        
+        # Таблица пользователей
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                name TEXT,
+                role TEXT DEFAULT 'Пользователь',
+                vip_level INTEGER DEFAULT 0,
+                vip_until TEXT,
+                balance REAL DEFAULT 0,
+                bitcoin REAL DEFAULT 0,
+                rubles REAL DEFAULT 0,
+                dollars REAL DEFAULT 0,
+                euros REAL DEFAULT 0,
+                warns INTEGER DEFAULT 0,
+                is_muted INTEGER DEFAULT 0,
+                mute_until TEXT,
+                work_cooldown TEXT,
+                mine_cooldown TEXT,
+                last_bonus TEXT,
+                join_date TEXT,
+                messages_count INTEGER DEFAULT 0,
+                say_used_today INTEGER DEFAULT 0,
+                last_say_reset TEXT,
+                is_agent INTEGER DEFAULT 0,
+                agent_number INTEGER DEFAULT 0,
+                tickets_processed INTEGER DEFAULT 0,
+                avg_rating REAL DEFAULT 0,
+                reports_muted INTEGER DEFAULT 0,
+                nickname TEXT DEFAULT '',
+                sysban_level INTEGER DEFAULT 0,
+                sysban_by INTEGER DEFAULT 0,
+                sysban_reason TEXT DEFAULT '',
+                sysban_date TEXT DEFAULT '',
+                miners_count INTEGER DEFAULT 0
+            )
+        ''')
+        
+        # Таблица бесед
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS chats (
+                chat_id INTEGER PRIMARY KEY,
+                chat_name TEXT,
+                creator_id INTEGER DEFAULT 0,
+                owner_id INTEGER DEFAULT 0,
+                is_active INTEGER DEFAULT 0,
+                activated_at TEXT,
+                created_at TEXT,
+                settings TEXT DEFAULT '{}'
+            )
+        ''')
+        
+        # Таблица объединений
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS unions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_id INTEGER,
+                name TEXT,
+                invite_code TEXT UNIQUE,
+                created_at TEXT,
+                settings TEXT DEFAULT '{}'
+            )
+        ''')
+        
+        # Таблица участников объединений
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS union_members (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                union_id INTEGER,
+                chat_id INTEGER,
+                added_by INTEGER,
+                added_at TEXT,
+                FOREIGN KEY (union_id) REFERENCES unions (id)
+            )
+        ''')
+        
+        # Таблица приглашений в объединения
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS union_invites (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                union_id INTEGER,
+                code TEXT UNIQUE,
+                created_by INTEGER,
+                expires_at TEXT,
+                max_uses INTEGER DEFAULT 1,
+                uses INTEGER DEFAULT 0,
+                FOREIGN KEY (union_id) REFERENCES unions (id)
+            )
+        ''')
+        
+        # Таблица приглашений
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS invites (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id INTEGER,
+                user_id INTEGER,
+                inviter_id INTEGER,
+                invited_at TEXT,
+                FOREIGN KEY (chat_id) REFERENCES chats (chat_id),
+                FOREIGN KEY (user_id) REFERENCES users (user_id),
+                FOREIGN KEY (inviter_id) REFERENCES users (user_id)
+            )
+        ''')
+        
+        # Таблица для ролей и прав
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS roles (
+                role_name TEXT PRIMARY KEY,
+                permissions TEXT,
+                priority INTEGER DEFAULT 0
+            )
+        ''')
+        
+        # Таблица для команды с приоритетами
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS command_permissions (
+                command TEXT PRIMARY KEY,
+                required_role TEXT,
+                priority INTEGER DEFAULT 0
+            )
+        ''')
+        
+        # Таблица для фильтров слов по беседам
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS chat_filters (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id INTEGER,
+                word TEXT,
+                action TEXT DEFAULT 'warn',
+                added_by INTEGER,
+                added_at TEXT,
+                UNIQUE(chat_id, word)
+            )
+        ''')
+        
+        # Таблица для инвентаря
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS inventory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                item TEXT,
+                quantity INTEGER DEFAULT 1,
+                purchased_at TEXT
+            )
+        ''')
+        
+        # Таблица для логов действий
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id INTEGER,
+                user_id INTEGER,
+                action TEXT,
+                target_id INTEGER,
+                reason TEXT,
+                created_at TEXT
+            )
+        ''')
+        
+        # Таблица для прав агентов
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS agent_permissions (
+                user_id INTEGER PRIMARY KEY,
+                permissions TEXT DEFAULT '{}'
+            )
+        ''')
+        
+        # Таблица для репортов
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                reporter_id INTEGER,
+                message TEXT,
+                chat_id INTEGER,
+                status TEXT DEFAULT 'open',
+                created_at TEXT,
+                closed_at TEXT,
+                closed_by INTEGER,
+                rating INTEGER DEFAULT 0
+            )
+        ''')
+        
+        # Таблица для рабов
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS slaves (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_id INTEGER,
+                slave_id INTEGER,
+                level INTEGER DEFAULT 1,
+                exp INTEGER DEFAULT 0,
+                chains INTEGER DEFAULT 0,
+                last_collect TEXT,
+                bought_at TEXT,
+                UNIQUE(owner_id, slave_id)
+            )
+        ''')
+        
+        # Добавление базовых ролей
+        default_roles = [
+            ('Пользователь', '{}', 0),
+            ('Модератор', '{"ban": true, "mute": true, "warn": true, "kick": true, "filter": true}', 40),
+            ('Администратор', '{"ban": true, "mute": true, "warn": true, "kick": true, "setrole": true, "filter": true, "addrole": true}', 50),
+            ('Владелец', '{"*": true}', 100)
+        ]
+        
+        for role in default_roles:
+            self.cursor.execute('INSERT OR IGNORE INTO roles (role_name, permissions, priority) VALUES (?, ?, ?)', role)
+        
+        self.conn.commit()
+    
+    def load_config(self):
+        try:
+            with open('config.json', 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            default_config = {
+                'chat_id': 0, 'mute_time': 5, 'warning_limit': 3,
+                'work_reward': [50, 200], 'mine_reward': [0.1, 0.5], 'bonus_reward': [100, 500],
+                'filter_action': 'warn',
+                'vip_benefits': {
+                    1: {'max_chats': 50, 'max_unions': 30, 'daily_say': 50},
+                    2: {'max_chats': 120, 'max_unions': 70, 'daily_say': 120},
+                    3: {'max_chats': 250, 'max_unions': 150, 'daily_say': 300}
+                }
+            }
+            with open('config.json', 'w', encoding='utf-8') as f:
+                json.dump(default_config, f, ensure_ascii=False, indent=4)
+            return default_config
+    
+    def load_exchange_rates(self):
+        try:
+            with open('exchange_rates.json', 'r', encoding='utf-8') as f:
+                saved_rates = json.load(f)
+                self.exchange_rates.update(saved_rates)
+        except:
+            self.save_exchange_rates()
+    
+    def save_exchange_rates(self):
+        try:
+            with open('exchange_rates.json', 'w', encoding='utf-8') as f:
+                json.dump(self.exchange_rates, f, ensure_ascii=False, indent=4)
+        except:
+            pass
+    
+    def generate_invite_code(self, length=8):
         alphabet = string.ascii_uppercase + string.digits
         return ''.join(secrets.choice(alphabet) for _ in range(length))
+    
+    # ========== МЕТОДЫ ОБЪЕДИНЕНИЙ ==========
     
     def create_union(self, user_id, name):
         user = self.get_user(user_id)
@@ -259,7 +539,8 @@ def generate_invite_code(self, length=8):
                 results.append(f"Беседа {chat[0]}: ✅")
             except:
                 results.append(f"Беседа {chat[0]}: ❌")
-        return True, f"✅ Бан выполнен в {len([r for r in results if '✅' in r])}/{len(chats)} беседах"
+        success_count = len([r for r in results if '✅' in r])
+        return True, f"✅ Бан выполнен в {success_count}/{len(chats)} беседах"
     
     def union_mute(self, admin_id, target_id, minutes, reason=None):
         self.cursor.execute('''
@@ -281,7 +562,8 @@ def generate_invite_code(self, length=8):
                 results.append(f"Беседа {chat[0]}: ✅")
             except:
                 results.append(f"Беседа {chat[0]}: ❌")
-        return True, f"✅ Мут выполнен в {len([r for r in results if '✅' in r])}/{len(chats)} беседах"
+        success_count = len([r for r in results if '✅' in r])
+        return True, f"✅ Мут выполнен в {success_count}/{len(chats)} беседах"
     
     def union_kick(self, admin_id, target_id, reason=None):
         self.cursor.execute('''
@@ -303,7 +585,8 @@ def generate_invite_code(self, length=8):
                 results.append(f"Беседа {chat[0]}: ✅")
             except:
                 results.append(f"Беседа {chat[0]}: ❌")
-        return True, f"✅ Кик выполнен в {len([r for r in results if '✅' in r])}/{len(chats)} беседах"
+        success_count = len([r for r in results if '✅' in r])
+        return True, f"✅ Кик выполнен в {success_count}/{len(chats)} беседах"
     
     def union_role(self, admin_id, target_id, role, reason=None):
         self.cursor.execute('''
@@ -325,152 +608,173 @@ def generate_invite_code(self, length=8):
                 results.append(f"Беседа {chat[0]}: ✅")
             except:
                 results.append(f"Беседа {chat[0]}: ❌")
-        return True, f"✅ Роль выдана в {len([r for r in results if '✅' in r])}/{len(chats)} беседах"
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS unions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner_id INTEGER,
-                name TEXT,
-                invite_code TEXT UNIQUE,
-                created_at TEXT,
-                settings TEXT DEFAULT '{}'
-            )
-        ''')
+        success_count = len([r for r in results if '✅' in r])
+        return True, f"✅ Роль выдана в {success_count}/{len(chats)} беседах"
+    
+    # ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
+    
+    def is_super_admin(self, user_id):
+        return user_id in self.super_admins
+    
+    def get_user_link(self, user_id):
+        user = self.get_user(user_id)
+        nickname = user[24] or user[1]
+        return f"[id{user_id}|{nickname}]"
+    
+    def get_user(self, user_id):
+        self.cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+        user = self.cursor.fetchone()
+        if not user:
+            try:
+                user_info = self.vk_api.users.get(user_ids=user_id)[0]
+                name = f"{user_info['first_name']} {user_info['last_name']}"
+            except:
+                name = f"User_{user_id}"
+            current_time = datetime.now().isoformat()
+            self.cursor.execute('INSERT INTO users (user_id, name, join_date, messages_count, say_used_today, last_say_reset, miners_count) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                               (user_id, name, current_time, 0, 0, current_time, 0))
+            self.conn.commit()
+            return self.get_user(user_id)
+        return user
+    
+    def send_message(self, message, chat_id=None, user_id=None, keyboard=None):
+        try:
+            params = {'random_id': random.randint(1, 1000000), 'message': message}
+            if user_id:
+                params['user_id'] = user_id
+            elif chat_id:
+                params['chat_id'] = chat_id
+            if keyboard:
+                params['keyboard'] = keyboard
+            self.vk_api.messages.send(**params)
+            return True
+        except Exception as e:
+            print(f"❌ Ошибка отправки: {e}")
+            return False
+    
+    def get_or_create_chat(self, chat_id):
+        self.cursor.execute('SELECT * FROM chats WHERE chat_id = ?', (chat_id,))
+        chat = self.cursor.fetchone()
+        if not chat:
+            try:
+                current_time = datetime.now().isoformat()
+                self.cursor.execute('INSERT INTO chats (chat_id, chat_name, owner_id, is_active, created_at, settings) VALUES (?, ?, ?, ?, ?, ?)',
+                                   (chat_id, f"Chat_{chat_id}", 0, 0, current_time, json.dumps(self.default_chat_settings)))
+                self.conn.commit()
+            except Exception as e:
+                print(f"⚠️ Ошибка создания беседы: {e}")
+            return self.get_or_create_chat(chat_id)
+        return chat
+    
+    def extract_user_id(self, text, reply_message=None):
+        if reply_message and reply_message.get('from_id'):
+            return reply_message['from_id']
+        match = re.search(r'\[id(\d+)[^\]]*\]', text)
+        if match:
+            return int(match.group(1))
+        match = re.search(r'@id(\d+)', text)
+        if match:
+            return int(match.group(1))
+        match = re.search(r'id(\d+)', text)
+        if match:
+            return int(match.group(1))
+        match = re.search(r'vk\.(com|ru)/id(\d+)', text)
+        if match:
+            return int(match.group(2))
+        words = text.split()
+        for word in words:
+            if word.isdigit():
+                return int(word)
+        return None
+    
+    # ========== МЕТОДЫ МОДЕРАЦИИ ==========
+    
+    def ban_user(self, user_id, admin_id, chat_id, reason=None):
+        try:
+            self.vk_api.messages.removeChatUser(chat_id=chat_id, user_id=user_id)
+            self.cursor.execute('UPDATE users SET role = "banned" WHERE user_id = ?', (user_id,))
+            self.conn.commit()
+            msg = f"⛔ Пользователь {self.get_user_link(user_id)} забанен администратором {self.get_user_link(admin_id)}"
+            if reason:
+                msg += f"\n📝 Причина: {reason}"
+            self.send_message(msg, chat_id)
+            return True
+        except Exception as e:
+            print(f"Ошибка бана: {e}")
+            return False
+    
+    def mute_user(self, user_id, admin_id, chat_id, minutes=None):
+        if not minutes:
+            minutes = 5
+        mute_until = datetime.now() + timedelta(minutes=minutes)
+        self.cursor.execute('UPDATE users SET is_muted = 1, mute_until = ? WHERE user_id = ?', (mute_until.isoformat(), user_id))
+        self.conn.commit()
+        self.send_message(f"🔇 Пользователю {self.get_user_link(user_id)} выдан мут на {minutes} минут от {self.get_user_link(admin_id)}", chat_id)
+        threading.Timer(minutes * 60, self.unmute_user, args=[user_id]).start()
+    
+    def unmute_user(self, user_id):
+        self.cursor.execute('UPDATE users SET is_muted = 0, mute_until = NULL WHERE user_id = ?', (user_id,))
+        self.conn.commit()
+    
+    def kick_user(self, admin_id, user_id, chat_id, reason=None):
+        try:
+            self.vk_api.messages.removeChatUser(chat_id=chat_id, user_id=user_id)
+            msg = f"🚪 Пользователь {self.get_user_link(user_id)} кикнут администратором {self.get_user_link(admin_id)}"
+            if reason:
+                msg += f"\n📝 Причина: {reason}"
+            self.send_message(msg, chat_id)
+            return True
+        except Exception as e:
+            print(f"Ошибка кика: {e}")
+            return False
+    
+    def sysrole_user(self, admin_id, user_id, role, chat_id):
+        try:
+            self.vk_api.messages.editChat(chat_id=chat_id, member_id=user_id, role=role)
+            return True, f"✅ Пользователю {self.get_user_link(user_id)} выдана роль {role} в беседе!"
+        except Exception as e:
+            return False, f"❌ Ошибка выдачи роли: {str(e)}"
+    
+    # ========== ЗАПУСК БОТА ==========
+    
+    def run(self):
+        print("🤖 Бот начал работу. Ожидание сообщений...")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("💡 Бот готов к работе!")
+        print("💬 Добавьте бота в беседу и введите /start")
         
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS union_members (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                union_id INTEGER,
-                chat_id INTEGER,
-                added_by INTEGER,
-                added_at TEXT,
-                FOREIGN KEY (union_id) REFERENCES unions (id)
-            )
-        ''')
-        
-        self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS union_invites (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                union_id INTEGER,
-                code TEXT UNIQUE,
-                created_by INTEGER,
-                expires_at TEXT,
-                max_uses INTEGER DEFAULT 1,
-                uses INTEGER DEFAULT 0,
-                FOREIGN KEY (union_id) REFERENCES unions (id)
-            )
-        ''')
-    if text in self.commands['union']:
-                msg = ("🏢 **Система объединений**\n━━━━━━━━━━━━━━━━━━━━━━\n"
-                       "• /union_create [название] - Создать\n• /union_join [код] - Вступить\n"
-                       "• /union_leave - Выйти\n• /union_info - Информация\n"
-                       "• /union_invite - Новый код (владелец)\n"
-                       "• /union_ban [пользователь] [причина] - Бан везде\n"
-                       "• /union_mute [пользователь] [минуты] - Мут везде\n"
-                       "• /union_kick [пользователь] [причина] - Кик везде\n"
-                       "• /union_role [пользователь] [роль] - Роль везде")
-                self.send_message(msg, chat_id)
-                return
-            
-            if text in self.commands['union_create']:
-                parts = text.split(maxsplit=1)
-                if len(parts) < 2:
-                    self.send_message("❌ /union_create [название]", chat_id)
-                    return
-                success, msg = self.create_union(user_id, parts[1])
-                self.send_message(msg, chat_id)
-                return
-            
-            if text in self.commands['union_join']:
-                parts = text.split()
-                if len(parts) < 2:
-                    self.send_message("❌ /union_join [код]", chat_id)
-                    return
-                success, msg = self.join_union(user_id, parts[1])
-                self.send_message(msg, chat_id)
-                return
-            
-            if text in self.commands['union_leave']:
-                success, msg = self.leave_union(user_id)
-                self.send_message(msg, chat_id)
-                return
-            
-            if text in self.commands['union_info']:
-                info = self.get_union_info(user_id)
-                self.send_message(info, chat_id)
-                return
-            
-            if text in self.commands['union_invite']:
-                success, msg = self.generate_union_invite(user_id)
-                self.send_message(msg, chat_id)
-                return
-            
-            if text in self.commands['union_ban']:
-                parts = text.split(maxsplit=2)
-                if len(parts) < 2:
-                    self.send_message("❌ /union_ban [пользователь] [причина]", chat_id)
-                    return
-                target_id = self.extract_user_id(parts[1], message.get('reply_message'))
-                if not target_id:
-                    self.send_message("❌ Пользователь не найден!", chat_id)
-                    return
-                reason = parts[2] if len(parts) > 2 else None
-                success, msg = self.union_ban(user_id, target_id, reason)
-                self.send_message(msg, chat_id)
-                return
-            
-            if text in self.commands['union_mute']:
-                parts = text.split()
-                if len(parts) < 3:
-                    self.send_message("❌ /union_mute [пользователь] [минуты] [причина]", chat_id)
-                    return
-                target_id = self.extract_user_id(parts[1], message.get('reply_message'))
-                if not target_id:
-                    self.send_message("❌ Пользователь не найден!", chat_id)
-                    return
-                try:
-                    minutes = int(parts[2])
-                except ValueError:
-                    self.send_message("❌ Минуты - число!", chat_id)
-                    return
-                reason = ' '.join(parts[3:]) if len(parts) > 3 else None
-                success, msg = self.union_mute(user_id, target_id, minutes, reason)
-                self.send_message(msg, chat_id)
-                return
-            
-            if text in self.commands['union_kick']:
-                parts = text.split(maxsplit=2)
-                if len(parts) < 2:
-                    self.send_message("❌ /union_kick [пользователь] [причина]", chat_id)
-                    return
-                target_id = self.extract_user_id(parts[1], message.get('reply_message'))
-                if not target_id:
-                    self.send_message("❌ Пользователь не найден!", chat_id)
-                    return
-                reason = parts[2] if len(parts) > 2 else None
-                success, msg = self.union_kick(user_id, target_id, reason)
-                self.send_message(msg, chat_id)
-                return
-            
-            if text in self.commands['union_role']:
-                parts = text.split()
-                if len(parts) < 3:
-                    self.send_message("❌ /union_role [пользователь] [роль]", chat_id)
-                    return
-                target_id = self.extract_user_id(parts[1], message.get('reply_message'))
-                if not target_id:
-                    self.send_message("❌ Пользователь не найден!", chat_id)
-                    return
-                role = parts[2]
-                success, msg = self.union_role(user_id, target_id, role)
-                self.send_message(msg, chat_id)
-                return
-                if __name__ == "__main__":
+        for event in self.longpoll.listen():
+            try:
+                if event.type == VkBotEventType.MESSAGE_NEW:
+                    self.handle_message(event)
+                elif event.type == VkBotEventType.MESSAGE_EVENT:
+                    self.handle_callback_query(event)
+            except Exception as e:
+                print(f"❌ Ошибка обработки события: {e}")
+                import traceback
+                traceback.print_exc()
+    
+    def handle_message(self, event):
+        # Этот метод должен быть полностью реализован
+        # Включите сюда всю логику обработки команд
+        pass
+    
+    def handle_callback_query(self, event):
+        # Обработка нажатий на кнопки
+        pass
+
+
+if __name__ == "__main__":
     GROUP_TOKEN = os.getenv("VK_TOKEN")
     GROUP_ID = os.getenv("VK_GROUP_ID")
+    
     if not GROUP_TOKEN or not GROUP_ID:
         print("❌ Ошибка: переменные окружения не заданы!")
+        print("💡 Добавьте VK_TOKEN и VK_GROUP_ID в настройках Bothost")
         exit(1)
+    
     GROUP_ID = int(GROUP_ID)
+    print(f"✅ Бот запускается с ID группы: {GROUP_ID}")
+    
     bot = VKChatManager(GROUP_TOKEN, GROUP_ID)
     bot.run()

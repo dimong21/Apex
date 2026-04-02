@@ -54,7 +54,6 @@ class VKChatManager:
         self.waiting_for_report_answer = {}
         self.pending_reports = {}
         
-        # Словарь команд
         self.commands = {
             'ban': ['/ban', '/бан', '!ban', '!бан'],
             'unban': ['/unban', '/разбан', '!unban', '!разбан'],
@@ -151,13 +150,11 @@ class VKChatManager:
         
         self.status_emojis = {'user': '👤', 'moderator': '🛡️', 'admin': '⚡', 'owner': '👑'}
         self.suspicious_logs = []
-        print("🤖 Бот успешно запущен!")
-    
-    def init_database(self):
+        print("🤖 Бот успешно запущен!"
+def init_database(self):
         self.conn = sqlite3.connect('vk_bot.db', check_same_thread=False)
         self.cursor = self.conn.cursor()
         
-        # Таблица пользователей
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
@@ -194,7 +191,6 @@ class VKChatManager:
             )
         ''')
         
-        # Таблица бесед
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS chats (
                 chat_id INTEGER PRIMARY KEY,
@@ -208,7 +204,6 @@ class VKChatManager:
             )
         ''')
         
-        # Таблица объединений
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS unions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -220,7 +215,6 @@ class VKChatManager:
             )
         ''')
         
-        # Таблица участников объединений
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS union_members (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -232,7 +226,6 @@ class VKChatManager:
             )
         ''')
         
-        # Таблица приглашений в объединения
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS union_invites (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -246,7 +239,6 @@ class VKChatManager:
             )
         ''')
         
-        # Таблица приглашений
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS invites (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -260,7 +252,6 @@ class VKChatManager:
             )
         ''')
         
-        # Таблица для ролей и прав
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS roles (
                 role_name TEXT PRIMARY KEY,
@@ -269,7 +260,6 @@ class VKChatManager:
             )
         ''')
         
-        # Таблица для команды с приоритетами
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS command_permissions (
                 command TEXT PRIMARY KEY,
@@ -278,7 +268,6 @@ class VKChatManager:
             )
         ''')
         
-        # Таблица для фильтров слов по беседам
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS chat_filters (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -291,7 +280,6 @@ class VKChatManager:
             )
         ''')
         
-        # Таблица для инвентаря
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS inventory (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -302,7 +290,6 @@ class VKChatManager:
             )
         ''')
         
-        # Таблица для логов действий
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -315,7 +302,6 @@ class VKChatManager:
             )
         ''')
         
-        # Таблица для прав агентов
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS agent_permissions (
                 user_id INTEGER PRIMARY KEY,
@@ -323,7 +309,6 @@ class VKChatManager:
             )
         ''')
         
-        # Таблица для репортов
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS reports (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -339,7 +324,6 @@ class VKChatManager:
             )
         ''')
         
-        # Таблица для рабов
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS slaves (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -354,7 +338,6 @@ class VKChatManager:
             )
         ''')
         
-        # Добавление базовых ролей
         default_roles = [
             ('Пользователь', '{}', 0),
             ('Модератор', '{"ban": true, "mute": true, "warn": true, "kick": true, "filter": true}', 40),
@@ -404,10 +387,7 @@ class VKChatManager:
     def generate_invite_code(self, length=8):
         alphabet = string.ascii_uppercase + string.digits
         return ''.join(secrets.choice(alphabet) for _ in range(length))
-    
-    # ========== МЕТОДЫ ОБЪЕДИНЕНИЙ ==========
-    
-    def create_union(self, user_id, name):
+def create_union(self, user_id, name):
         user = self.get_user(user_id)
         self.cursor.execute('SELECT id FROM unions WHERE owner_id = ?', (user_id,))
         if self.cursor.fetchone():
@@ -611,8 +591,6 @@ class VKChatManager:
         success_count = len([r for r in results if '✅' in r])
         return True, f"✅ Роль выдана в {success_count}/{len(chats)} беседах"
     
-    # ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
-    
     def is_super_admin(self, user_id):
         return user_id in self.super_admins
     
@@ -636,8 +614,7 @@ class VKChatManager:
             self.conn.commit()
             return self.get_user(user_id)
         return user
-    
-    def send_message(self, message, chat_id=None, user_id=None, keyboard=None):
+def send_message(self, message, chat_id=None, user_id=None, keyboard=None):
         try:
             params = {'random_id': random.randint(1, 1000000), 'message': message}
             if user_id:
@@ -687,7 +664,115 @@ class VKChatManager:
                 return int(word)
         return None
     
-    # ========== МЕТОДЫ МОДЕРАЦИИ ==========
+    def add_balance(self, user_id, currency, amount):
+        user = self.get_user(user_id)
+        currency_map = {'rub': (7, 'rubles'), 'usd': (8, 'dollars'), 'eur': (9, 'euros'), 'btc': (6, 'bitcoin')}
+        if currency in currency_map:
+            idx, name = currency_map[currency]
+            new_amount = (user[idx] or 0) + amount
+            self.cursor.execute(f'UPDATE users SET {name} = ? WHERE user_id = ?', (new_amount, user_id))
+            self.conn.commit()
+            return True
+        return False
+    
+    def daily_bonus(self, user_id):
+        user = self.get_user(user_id)
+        if user[15]:
+            try:
+                last_bonus = datetime.fromisoformat(user[15])
+                if datetime.now() - last_bonus < timedelta(days=1):
+                    return False, "🎁 Бонус можно получить раз в 24 часа!"
+            except:
+                pass
+        bonus = random.randint(*self.config['bonus_reward'])
+        self.add_balance(user_id, 'rub', bonus)
+        self.cursor.execute('UPDATE users SET last_bonus = ? WHERE user_id = ?', (datetime.now().isoformat(), user_id))
+        self.conn.commit()
+        return True, f"🎉 Вы получили бонус: {bonus} ₽"
+    
+    def mine_bitcoin(self, user_id):
+        user = self.get_user(user_id)
+        miners_count = user[30] or 0
+        if miners_count == 0:
+            return False, "❌ У вас нет майнеров! Купите их в магазине: /shop"
+        if user[14]:
+            try:
+                last_mine = datetime.fromisoformat(user[14])
+                if datetime.now() - last_mine < timedelta(hours=1):
+                    return False, "⛏️ Майнинг доступен раз в час!"
+            except:
+                pass
+        reward = random.uniform(*self.config['mine_reward']) * miners_count
+        self.add_balance(user_id, 'btc', reward)
+        self.cursor.execute('UPDATE users SET mine_cooldown = ? WHERE user_id = ?', (datetime.now().isoformat(), user_id))
+        self.conn.commit()
+        return True, f"⛏️ Вы намайнили {reward:.8f} BTC (Майнеров: {miners_count})"
+    
+    def work(self, user_id):
+        user = self.get_user(user_id)
+        if user[13]:
+            try:
+                last_work = datetime.fromisoformat(user[13])
+                if datetime.now() - last_work < timedelta(minutes=30):
+                    return False, "💼 Работа доступна раз в 30 минут!"
+            except:
+                pass
+        reward = random.randint(*self.config['work_reward'])
+        self.add_balance(user_id, 'rub', reward)
+        self.cursor.execute('UPDATE users SET work_cooldown = ? WHERE user_id = ?', (datetime.now().isoformat(), user_id))
+        self.conn.commit()
+        return True, f"💼 Вы заработали {reward} ₽"
+    
+    def buy_vip(self, user_id, level=1):
+        user = self.get_user(user_id)
+        price = self.shop_items[f'vip{level}']['price']
+        if user[7] >= price:
+            self.cursor.execute('UPDATE users SET rubles = rubles - ? WHERE user_id = ?', (price, user_id))
+            vip_until = (datetime.now() + timedelta(days=30)).isoformat()
+            self.cursor.execute('UPDATE users SET vip_level = ?, vip_until = ?, role = ? WHERE user_id = ?', (level, vip_until, f'vip{level}', user_id))
+            self.conn.commit()
+            return True, f"✅ Поздравляем! Вы приобрели VIP {level} уровня на 30 дней!"
+        return False, f"❌ Недостаточно средств! Нужно {price} ₽"
+    
+    def buy_miner(self, user_id):
+        user = self.get_user(user_id)
+        price = self.shop_items['bitcoin_miner']['price']
+        if user[8] >= price:
+            self.cursor.execute('UPDATE users SET dollars = dollars - ? WHERE user_id = ?', (price, user_id))
+            self.cursor.execute('UPDATE users SET miners_count = miners_count + 1 WHERE user_id = ?', (user_id,))
+            self.conn.commit()
+            return True, f"✅ Вы купили майнер за {price}$! Теперь у вас {user[30] + 1} майнер(ов)."
+        return False, f"❌ Недостаточно средств! Нужно {price}$"
+    
+    def buy_item(self, user_id, item_name, price=None):
+        user = self.get_user(user_id)
+        if price is None:
+            for category in self.inline_shop.values():
+                if item_name in category:
+                    price = category[item_name]
+                    break
+        if price is None:
+            return False, "❌ Товар не найден!"
+        if user[8] >= price:
+            self.cursor.execute('UPDATE users SET dollars = dollars - ? WHERE user_id = ?', (price, user_id))
+            self.cursor.execute('INSERT INTO inventory (user_id, item, quantity, purchased_at) VALUES (?, ?, 1, ?)', (user_id, item_name, datetime.now().isoformat()))
+            self.conn.commit()
+            return True, f"✅ Вы купили {item_name} за {price}$!"
+        return False, f"❌ Недостаточно средств! Нужно {price}$"
+    
+    def transfer_money(self, user_id, target_id, currency, amount):
+        user = self.get_user(user_id)
+        target = self.get_user(target_id)
+        currency_map = {'rub': (7, 'rubles'), 'usd': (8, 'dollars'), 'eur': (9, 'euros'), 'btc': (6, 'bitcoin')}
+        if currency not in currency_map:
+            return False, "❌ Неверная валюта!"
+        idx, name = currency_map[currency]
+        if user[idx] < amount:
+            return False, "❌ Недостаточно средств!"
+        self.cursor.execute(f'UPDATE users SET {name} = {name} - ? WHERE user_id = ?', (amount, user_id))
+        self.cursor.execute(f'UPDATE users SET {name} = {name} + ? WHERE user_id = ?', (amount, target_id))
+        self.conn.commit()
+        return True, f"✅ Переведено {amount} {currency.upper()} пользователю {self.get_user_link(target_id)}"
     
     def ban_user(self, user_id, admin_id, chat_id, reason=None):
         try:
@@ -735,33 +820,332 @@ class VKChatManager:
         except Exception as e:
             return False, f"❌ Ошибка выдачи роли: {str(e)}"
     
-    # ========== ЗАПУСК БОТА ==========
+    def add_warn(self, user_id, admin_id, chat_id, reason=None):
+        user = self.get_user(user_id)
+        warns = user[10] + 1
+        self.cursor.execute('UPDATE users SET warns = ? WHERE user_id = ?', (warns, user_id))
+        self.conn.commit()
+        admin_name = self.get_user_link(admin_id) if admin_id != 0 else "Система"
+        self.send_message(f"⚠️ Пользователю {self.get_user_link(user_id)} выдан варн ({warns}/{self.config['warning_limit']}) от {admin_name}", chat_id)
+        if reason:
+            self.send_message(f"📝 Причина: {reason}", chat_id)
+        if warns >= self.config['warning_limit']:
+            self.mute_user(user_id, admin_id, chat_id, 30)
+            self.cursor.execute('UPDATE users SET warns = 0 WHERE user_id = ?', (user_id,))
+            self.conn.commit()
+def is_agent(self, user_id):
+        self.cursor.execute('SELECT is_agent FROM users WHERE user_id = ?', (user_id,))
+        result = self.cursor.fetchone()
+        return result and result[0] == 1
+    
+    def get_agent_number(self, user_id):
+        self.cursor.execute('SELECT agent_number FROM users WHERE user_id = ?', (user_id,))
+        result = self.cursor.fetchone()
+        return result[0] if result else 0
+    
+    def has_agent_permission(self, user_id, permission):
+        if not self.is_agent(user_id):
+            return False
+        if self.is_super_admin(user_id):
+            return True
+        self.cursor.execute('SELECT permissions FROM agent_permissions WHERE user_id = ?', (user_id,))
+        result = self.cursor.fetchone()
+        if result:
+            perms = json.loads(result[0])
+            return perms.get(permission, False)
+        return permission == 'reports'
+    
+    def can_manage_agents(self, user_id):
+        if self.is_super_admin(user_id):
+            return True
+        return self.has_agent_permission(user_id, 'agent')
+    
+    def get_all_agents(self):
+        self.cursor.execute('SELECT user_id, name, agent_number, tickets_processed, avg_rating FROM users WHERE is_agent = 1 ORDER BY agent_number ASC')
+        return self.cursor.fetchall()
+    
+    def add_report(self, user_id, reporter_id, message, chat_id=None):
+        current_time = datetime.now().isoformat()
+        self.cursor.execute('INSERT INTO reports (user_id, reporter_id, message, chat_id, created_at) VALUES (?, ?, ?, ?, ?)',
+                           (user_id, reporter_id, message, chat_id or 0, current_time))
+        self.conn.commit()
+        report_id = self.cursor.lastrowid
+        self.notify_agents(report_id, user_id, message, chat_id)
+        return True, f"✅ Репорт #{report_id} отправлен!"
+    
+    def notify_agents(self, report_id, user_id, message, chat_id):
+        self.cursor.execute('SELECT user_id FROM users WHERE is_agent = 1 AND reports_muted = 0')
+        agents = self.cursor.fetchall()
+        report_text = f"📝 **Новый репорт #{report_id}**\n👤 От пользователя: {self.get_user_link(user_id)}\n💬 Сообщение: {message[:200]}\n💬 Беседа: {chat_id}"
+        for agent in agents:
+            self.send_message(report_text, user_id=agent[0])
+    
+    def get_bot_admins(self, admin_id):
+        if not self.is_agent(admin_id):
+            return "❌ Вы не являетесь агентом!"
+        agents = self.get_all_agents()
+        if not agents:
+            return "📋 Список агентов пуст."
+        info = "👑 **Список агентов поддержки**\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        for agent_id, name, agent_number, tickets, rating in agents:
+            info += f"**#{agent_number}** | {self.get_user_link(agent_id)}\n📊 Тикетов: {tickets} | Рейтинг: {rating:.1f}⭐\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        return info
+    
+    def activate_chat(self, chat_id, user_id):
+        try:
+            self.cursor.execute('SELECT is_active FROM chats WHERE chat_id = ?', (chat_id,))
+            result = self.cursor.fetchone()
+            if result and result[0] == 1:
+                self.send_message("❌ Беседа уже активирована!", chat_id)
+                return False, "❌ Беседа уже активирована!"
+            current_time = datetime.now().isoformat()
+            self.cursor.execute('SELECT * FROM chats WHERE chat_id = ?', (chat_id,))
+            chat = self.cursor.fetchone()
+            if chat:
+                self.cursor.execute('UPDATE chats SET is_active = 1, activated_at = ?, owner_id = ? WHERE chat_id = ?', (current_time, user_id, chat_id))
+            else:
+                self.cursor.execute('INSERT INTO chats (chat_id, chat_name, owner_id, is_active, activated_at, created_at, settings) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                                   (chat_id, f"Chat_{chat_id}", user_id, 1, current_time, current_time, json.dumps(self.default_chat_settings)))
+            self.cursor.execute('UPDATE users SET role = ? WHERE user_id = ?', ('Владелец', user_id))
+            self.conn.commit()
+            welcome_msg = f"✅ **Беседа активирована!**\n👑 Владелец беседы: {self.get_user_link(user_id)}\n🎉 Удачного использования бота!\n\n📋 **Список команд:** /help\n⚙️ **Настройки чата:** /settings\n❓ **Вопросы по боту:** /report"
+            self.send_message(welcome_msg, chat_id)
+            return True, "✅ Беседа успешно активирована!"
+        except Exception as e:
+            print(f"❌ Ошибка активации: {e}")
+            self.send_message(f"❌ Ошибка активации: {str(e)[:100]}", chat_id)
+            return False, f"❌ Ошибка активации: {str(e)[:100]}"
+    
+    def get_user_stats_detailed(self, user_id, chat_id=None):
+        user = self.get_user(user_id)
+        stats = f"🔍 Информация о пользователе:\n━━━━━━━━━━━━━━━━━━━━━━\n"
+        stats += f"👤 Статус: {user[2]}\n⚠ Предупреждений: {user[10]}/{self.config['warning_limit']}\n📄 Никнейм: {user[24] or user[1]}\n"
+        stats += f"🚧 Блокировка чата: {'✅ Да' if user[11]==1 else '❌ Нет'}\n"
+        stats += f"📅 Дата появления: {user[16][:16] if user[16] else 'Неизвестно'}\n\n"
+        stats += f"📋 Глобальная информация:\n"
+        if user[3] > 0:
+            stats += f"💎 VIP статус: VIP {user[3]} уровня\n"
+        stats += f"✍ Сообщений отправлено: {user[17]}\n⛏️ Майнеров: {user[30] or 0}\n⚙ ID: {user_id}\n"
+        return stats
+def handle_message(self, event):
+        if event.type == VkBotEventType.MESSAGE_NEW:
+            message = event.object.message
+            chat_id = None
+            if message.get('peer_id', 0) > 2000000000:
+                chat_id = message['peer_id'] - 2000000000
+            else:
+                return
+            
+            if chat_id:
+                self.get_or_create_chat(chat_id)
+            
+            if 'text' in message:
+                text = message['text'].lower()
+                user_id = message['from_id']
+                
+                if text in self.commands['start']:
+                    self.activate_chat(chat_id, user_id)
+                    return
+                
+                self.cursor.execute('SELECT is_active FROM chats WHERE chat_id = ?', (chat_id,))
+                result = self.cursor.fetchone()
+                if not result or result[0] == 0:
+                    if text not in self.commands['start']:
+                        self.send_message("❌ Беседа не активирована! Введите /start", chat_id)
+                    return
+                
+                if text in self.commands['ping']:
+                    start_time = time.time()
+                    response_time = (time.time() - start_time) * 1000
+                    self.send_message(f"🏓 Понг! {response_time:.2f} мс", chat_id)
+                    return
+                
+                if text in self.commands['help']:
+                    self.send_message("📖 **Список команд:**\nhttps://vk.com/@your_article", chat_id)
+                    return
+                
+                if text in self.commands['stats']:
+                    self.send_message(self.get_user_stats_detailed(user_id, chat_id), chat_id)
+                    return
+                
+                if text in self.commands['balance']:
+                    user = self.get_user(user_id)
+                    self.send_message(f"💰 Баланс:\n🇷🇺 Рубли: {user[7]:.2f} ₽\n🇺🇸 Доллары: {user[8]:.2f} $\n🇪🇺 Евро: {user[9]:.2f} €\n₿ Биткойны: {user[6]:.8f} BTC", chat_id)
+                    return
+                
+                if text in self.commands['bonus']:
+                    success, msg = self.daily_bonus(user_id)
+                    self.send_message(msg, chat_id)
+                    return
+                
+                if text in self.commands['mine']:
+                    success, msg = self.mine_bitcoin(user_id)
+                    self.send_message(msg, chat_id)
+                    return
+                
+                if text in self.commands['work']:
+                    success, msg = self.work(user_id)
+                    self.send_message(msg, chat_id)
+                    return
+                
+                if text in self.commands['shop']:
+                    self.send_message("🛒 Магазин: /buy [vip1/vip2/vip3/miner]", chat_id)
+                    return
+                
+                if text in self.commands['buy']:
+                    parts = text.split()
+                    if len(parts) >= 2:
+                        if parts[1] == 'miner':
+                            success, msg = self.buy_miner(user_id)
+                            self.send_message(msg, chat_id)
+                        elif parts[1] in ['vip1', 'vip2', 'vip3']:
+                            level = int(parts[1][3])
+                            success, msg = self.buy_vip(user_id, level)
+                            self.send_message(msg, chat_id)
+                    return
+                
+                if text in self.commands['staff']:
+                    staff = self.get_staff_list()
+                    if staff:
+                        staff_text = "👥 **Персонал:**\n━━━━━━━━━━━━━━━━━━\n"
+                        for member in staff:
+                            staff_text += f"👤 {self.get_user_link(member['id'])} - {member['role']}\n"
+                        self.send_message(staff_text, chat_id)
+                    else:
+                        self.send_message("👥 Персонал отсутствует.", chat_id)
+                    return
+                
+                if text in self.commands['botadmins']:
+                    self.send_message(self.get_bot_admins(user_id), chat_id)
+                    return
+                
+                if text in self.commands['report']:
+                    parts = text.split(maxsplit=1)
+                    if len(parts) > 1:
+                        success, msg = self.add_report(user_id, user_id, parts[1], chat_id)
+                        self.send_message(msg, chat_id)
+                    else:
+                        self.send_message("❌ /report [текст]", chat_id)
+                    return
+                
+                if text in self.commands['union']:
+                    msg = ("🏢 **Объединения:**\n/union_create [название]\n/union_join [код]\n/union_leave\n/union_info\n/union_invite\n/union_ban [user]\n/union_mute [user] [мин]\n/union_kick [user]\n/union_role [user] [роль]")
+                    self.send_message(msg, chat_id)
+                    return
+                
+                if text in self.commands['union_create']:
+                    parts = text.split(maxsplit=1)
+                    if len(parts) < 2:
+                        self.send_message("❌ /union_create [название]", chat_id)
+                        return
+                    success, msg = self.create_union(user_id, parts[1])
+                    self.send_message(msg, chat_id)
+                    return
+                
+                if text in self.commands['union_join']:
+                    parts = text.split()
+                    if len(parts) < 2:
+                        self.send_message("❌ /union_join [код]", chat_id)
+                        return
+                    success, msg = self.join_union(user_id, parts[1])
+                    self.send_message(msg, chat_id)
+                    return
+                
+                if text in self.commands['union_leave']:
+                    success, msg = self.leave_union(user_id)
+                    self.send_message(msg, chat_id)
+                    return
+                
+                if text in self.commands['union_info']:
+                    info = self.get_union_info(user_id)
+                    self.send_message(info, chat_id)
+                    return
+                
+                if text in self.commands['union_invite']:
+                    success, msg = self.generate_union_invite(user_id)
+                    self.send_message(msg, chat_id)
+                    return
+                
+                if text in self.commands['union_ban']:
+                    parts = text.split(maxsplit=2)
+                    if len(parts) < 2:
+                        self.send_message("❌ /union_ban [пользователь] [причина]", chat_id)
+                        return
+                    target_id = self.extract_user_id(parts[1])
+                    if not target_id:
+                        self.send_message("❌ Пользователь не найден!", chat_id)
+                        return
+                    reason = parts[2] if len(parts) > 2 else None
+                    success, msg = self.union_ban(user_id, target_id, reason)
+                    self.send_message(msg, chat_id)
+                    return
+                
+                if text in self.commands['union_mute']:
+                    parts = text.split()
+                    if len(parts) < 3:
+                        self.send_message("❌ /union_mute [пользователь] [минуты]", chat_id)
+                        return
+                    target_id = self.extract_user_id(parts[1])
+                    if not target_id:
+                        self.send_message("❌ Пользователь не найден!", chat_id)
+                        return
+                    try:
+                        minutes = int(parts[2])
+                    except:
+                        self.send_message("❌ Минуты - число!", chat_id)
+                        return
+                    reason = ' '.join(parts[3:]) if len(parts) > 3 else None
+                    success, msg = self.union_mute(user_id, target_id, minutes, reason)
+                    self.send_message(msg, chat_id)
+                    return
+                
+                if text in self.commands['union_kick']:
+                    parts = text.split(maxsplit=2)
+                    if len(parts) < 2:
+                        self.send_message("❌ /union_kick [пользователь] [причина]", chat_id)
+                        return
+                    target_id = self.extract_user_id(parts[1])
+                    if not target_id:
+                        self.send_message("❌ Пользователь не найден!", chat_id)
+                        return
+                    reason = parts[2] if len(parts) > 2 else None
+                    success, msg = self.union_kick(user_id, target_id, reason)
+                    self.send_message(msg, chat_id)
+                    return
+                
+                if text in self.commands['union_role']:
+                    parts = text.split()
+                    if len(parts) < 3:
+                        self.send_message("❌ /union_role [пользователь] [роль]", chat_id)
+                        return
+                    target_id = self.extract_user_id(parts[1])
+                    if not target_id:
+                        self.send_message("❌ Пользователь не найден!", chat_id)
+                        return
+                    role = parts[2]
+                    success, msg = self.union_role(user_id, target_id, role)
+                    self.send_message(msg, chat_id)
+                    return
+    
+    def get_staff_list(self):
+        staff_roles = ['Модератор', 'Администратор', 'Владелец']
+        staff_list = []
+        for role in staff_roles:
+            self.cursor.execute('SELECT user_id, name FROM users WHERE role = ?', (role,))
+            for user_id, name in self.cursor.fetchall():
+                staff_list.append({'id': user_id, 'name': name, 'role': role})
+        return staff_list
     
     def run(self):
         print("🤖 Бот начал работу. Ожидание сообщений...")
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print("💡 Бот готов к работе!")
-        print("💬 Добавьте бота в беседу и введите /start")
-        
         for event in self.longpoll.listen():
             try:
-                if event.type == VkBotEventType.MESSAGE_NEW:
-                    self.handle_message(event)
-                elif event.type == VkBotEventType.MESSAGE_EVENT:
-                    self.handle_callback_query(event)
+                self.handle_message(event)
             except Exception as e:
-                print(f"❌ Ошибка обработки события: {e}")
+                print(f"❌ Ошибка: {e}")
                 import traceback
                 traceback.print_exc()
-    
-    def handle_message(self, event):
-        # Этот метод должен быть полностью реализован
-        # Включите сюда всю логику обработки команд
-        pass
-    
-    def handle_callback_query(self, event):
-        # Обработка нажатий на кнопки
-        pass
 
 
 if __name__ == "__main__":
@@ -770,11 +1154,10 @@ if __name__ == "__main__":
     
     if not GROUP_TOKEN or not GROUP_ID:
         print("❌ Ошибка: переменные окружения не заданы!")
-        print("💡 Добавьте VK_TOKEN и VK_GROUP_ID в настройках Bothost")
         exit(1)
     
     GROUP_ID = int(GROUP_ID)
-    print(f"✅ Бот запускается с ID группы: {GROUP_ID}")
+    print(f"✅ Запуск с ID группы: {GROUP_ID}")
     
     bot = VKChatManager(GROUP_TOKEN, GROUP_ID)
     bot.run()

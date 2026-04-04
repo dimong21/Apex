@@ -2416,7 +2416,6 @@ def handle_staff_with_nicks(peer_id):
         send_message(peer_id, text)
     except Exception as e:
         send_message(peer_id, f"❌ Ошибка: {e}")
-в
 def handle_activity(peer_id, user_id):
     user_data = get_user_data(user_id)
     exp = user_data[22]

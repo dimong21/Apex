@@ -2476,6 +2476,17 @@ def handle_newrole(peer_id, user_id, args):
     role_name = " ".join(args[1:])[:32]
     cursor.execute("INSERT OR REPLACE INTO chat_roles (peer_id, role_name, priority) VALUES (?, ?, ?)",
                   (peer_id, role_name, priority))
+    # Таблица для хранения ожидающих ответов (для репортов)
+    cursor.execute('''
+CREATE TABLE IF NOT EXISTS pending_answers (
+    user_id INTEGER,
+    command TEXT,
+    step INTEGER,
+    data TEXT,
+    date TEXT,
+    PRIMARY KEY(user_id, command)
+)
+''')
     conn.commit()
     send_message(peer_id, f"✅ Роль «{role_name}» с приоритетом {priority} создана!")
 

@@ -31,21 +31,17 @@ EXCHANGE_RATES = {
 
 # Товары в магазине
 SHOP_ITEMS = {
-    # Майнеры (приносят BTC в час)
     "miner_bad": {"name": "⚙️ Плохой майнер", "price": 500, "currency": "ruble", "btc_per_hour": 0.0001},
     "miner_mid": {"name": "⚙️ Средний майнер", "price": 2000, "currency": "ruble", "btc_per_hour": 0.0005},
     "miner_good": {"name": "⚙️ Хороший майнер", "price": 8000, "currency": "ruble", "btc_per_hour": 0.002},
     "miner_premium": {"name": "⚙️ Премиум майнер", "price": 25000, "currency": "ruble", "btc_per_hour": 0.01},
     "miner_legendary": {"name": "⚙️ Легендарный майнер", "price": 100000, "currency": "ruble", "btc_per_hour": 0.05},
-    # Телефоны
     "phone_xiaomi": {"name": "📱 Xiaomi", "price": 15000, "currency": "ruble"},
     "phone_iphone": {"name": "📱 iPhone 15", "price": 80000, "currency": "ruble"},
     "phone_samsung": {"name": "📱 Samsung S24", "price": 70000, "currency": "ruble"},
-    # Дома
     "house_small": {"name": "🏠 Маленький дом", "price": 100000, "currency": "ruble"},
     "house_mid": {"name": "🏠 Средний дом", "price": 500000, "currency": "ruble"},
     "house_big": {"name": "🏠 Большой дом", "price": 2000000, "currency": "ruble"},
-    # Одежда
     "clothes_hat": {"name": "🧢 Кепка", "price": 500, "currency": "ruble"},
     "clothes_hoodie": {"name": "👕 Худи", "price": 2000, "currency": "ruble"},
     "clothes_jacket": {"name": "🧥 Куртка", "price": 5000, "currency": "ruble"},
@@ -60,7 +56,7 @@ vk = vk_session.get_api()
 longpoll = VkBotLongPoll(vk_session, GROUP_ID)
 
 # ============================================================
-# БАЗА ДАННЫХ SQLITE
+# БАЗА ДАННЫХ SQLITE (ПОЛНОСТЬЮ ИСПРАВЛЕНА)
 # ============================================================
 conn = sqlite3.connect('bot.db', check_same_thread=False)
 cursor = conn.cursor()
@@ -275,8 +271,20 @@ CREATE TABLE IF NOT EXISTS chat_roles (
 )
 ''')
 
-conn.commit()
+# ========== ВАЖНО: Таблица для ожидающих ответов ==========
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS pending_answers (
+    user_id INTEGER,
+    command TEXT,
+    step INTEGER,
+    data TEXT,
+    date TEXT
+)
+''')
+# ==========================================================
 
+conn.commit()
+print("✅ База данных инициализирована, все таблицы созданы")
 # ============================================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # ============================================================
@@ -558,12 +566,6 @@ def get_ping_keyboard():
     keyboard = VkKeyboard(inline=True)
     keyboard.add_callback_button("🔄 Обновить", VkKeyboardColor.PRIMARY, payload={"action": "ping_refresh"})
     return keyboard
-
-def get_active_commands_keyboard():
-    keyboard = VkKeyboard(inline=True)
-    keyboard.add_callback_button("📊 Мой уровень", VkKeyboardColor.PRIMARY, payload={"action": "my_activity"})
-    keyboard.add_callback_button("🏆 Топ активности", VkKeyboardColor.POSITIVE, payload={"action": "top_activity"})
-    return keyboard
 # ============================================================
 # ОСНОВНЫЕ КОМАНДЫ
 # ============================================================
@@ -717,22 +719,18 @@ def handle_stats(peer_id, user_id, args, reply_to_user_id=None):
     chat_data = cursor.execute("SELECT max_warns FROM chats WHERE peer_id = ?", (peer_id,)).fetchone()
     max_warns = chat_data[0] if chat_data else 3
     
-    # Определяем статус
     status = "✨ Пользователь"
     if target_id == OWNER_ID:
         status = "👑 ВЛАДЕЛЕЦ БОТА"
     elif user_data[6] > 0:
         status = f"💎 VIP {user_data[6]}"
     
-    # Роль в беседе
     chat_role = get_user_role_in_chat(peer_id, target_id)
     
-    # Проверка на агента
     agent_text = ""
     if user_data[15]:
         agent_text = f"\n🕵️ Агент поддержки №{user_data[15]}\n⭐ Рейтинг: {user_data[16]:.1f}"
     
-    # Проверка на системный бан
     sysban_text = ""
     if user_data[17] == 1:
         sysban_text = "\n🚫 В ЧС БОТА (кикнут + обнуление)"
@@ -743,7 +741,6 @@ def handle_stats(peer_id, user_id, args, reply_to_user_id=None):
     elif user_data[17] == 4:
         sysban_text = "\n💀 Удалён из БД"
     
-    # Получение предметов из инвентаря
     cursor.execute("SELECT item_id FROM inventory WHERE user_id = ?", (target_id,))
     items = cursor.fetchall()
     items_text = ""
@@ -861,7 +858,6 @@ def handle_pay(peer_id, user_id, args):
         return
     
     sender_data = get_user_data(user_id)
-    balance_field = f"balance_{currency}"
     balance_index = {"ruble": 4, "euro": 2, "dollar": 3, "btc": 5}[currency]
     sender_balance = sender_data[balance_index]
     
@@ -961,11 +957,9 @@ def handle_buy_item(peer_id, user_id, item_id):
     
     update_balance(user_id, 'ruble', -item['price'])
     
-    # Для майнеров - обновляем тип майнера
     if item_id.startswith("miner"):
         cursor.execute("UPDATE users SET miner_type = ? WHERE user_id = ?", (item_id, user_id))
     else:
-        # Для остальных товаров - добавляем в инвентарь
         cursor.execute("INSERT OR REPLACE INTO inventory (user_id, item_id, quantity) VALUES (?, ?, COALESCE((SELECT quantity FROM inventory WHERE user_id = ? AND item_id = ?), 0) + 1)",
                       (user_id, item_id, user_id, item_id))
     
@@ -989,7 +983,7 @@ def handle_my_inventory(peer_id, user_id):
 
 def handle_mine(peer_id, user_id):
     user_data = get_user_data(user_id)
-    miner_type = user_data[24]  # miner_type
+    miner_type = user_data[24]
     
     if not miner_type or not miner_type.startswith("miner"):
         send_message(peer_id, "❌ У вас нет майнера! Купите его в магазине /shop")
@@ -1231,7 +1225,7 @@ def handle_start(peer_id, user_id):
 📝 /report [текст] - сообщить о проблеме
 
 Приятного общения!""")
-    # ============================================================
+# ============================================================
 # СИСТЕМА АГЕНТОВ И СЕКРЕТНЫЕ КОМАНДЫ
 # ============================================================
 
@@ -1363,7 +1357,6 @@ def handle_sysban(peer_id, user_id, args):
     issuer = f"Агент №{agent_num}" if agent_num else "Система"
     
     if level == 1:
-        # Кик из всех чатов + обнуление баланса
         cursor.execute("SELECT peer_id FROM chats WHERE active = 1")
         for chat in cursor.fetchall():
             try:
@@ -1373,7 +1366,6 @@ def handle_sysban(peer_id, user_id, args):
         cursor.execute("UPDATE users SET balance_euro = 0, balance_dollar = 0, balance_ruble = 0, balance_btc = 0 WHERE user_id = ?", (target_id,))
         
     elif level == 2:
-        # Только кик из чатов
         cursor.execute("SELECT peer_id FROM chats WHERE active = 1")
         for chat in cursor.fetchall():
             try:
@@ -1382,11 +1374,9 @@ def handle_sysban(peer_id, user_id, args):
                 pass
                 
     elif level == 3:
-        # Только обнуление баланса
         cursor.execute("UPDATE users SET balance_euro = 0, balance_dollar = 0, balance_ruble = 0, balance_btc = 0 WHERE user_id = ?", (target_id,))
         
     elif level == 4:
-        # Полный снос
         cursor.execute("DELETE FROM users WHERE user_id = ?", (target_id,))
         cursor.execute("DELETE FROM slaves WHERE slave_id = ? OR owner_id = ?", (target_id, target_id))
         cursor.execute("DELETE FROM marriages WHERE user1_id = ? OR user2_id = ?", (target_id, target_id))
@@ -1705,10 +1695,8 @@ def handle_report_reply(agent_id, report_id, message):
         send_message(agent_id, "❌ Этот репорт уже закрыт или не взят в работу!")
         return
     
-    # Отправляем ответ пользователю
     send_message(user_id, f"📝 *Ответ агента по репорту #{report_id}*\n━━━━━━━━━━━━━━━━━━━━\n\n{message}")
     
-    # Сохраняем сообщение
     cursor.execute("INSERT INTO report_messages (report_id, from_id, message, date) VALUES (?, ?, ?, ?)",
                   (report_id, agent_id, message, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit()
@@ -1733,13 +1721,11 @@ def handle_close_report(agent_id, report_id):
                   (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), agent_id, report_id))
     conn.commit()
     
-    # Увеличиваем счётчик закрытых тикетов агента
     cursor.execute("UPDATE agents SET tickets_closed = tickets_closed + 1 WHERE user_id = ?", (agent_id,))
     conn.commit()
     
     agent_num = get_agent_number(agent_id)
     
-    # Отправляем пользователю оценку
     send_message(user_id, f"✅ *Репорт #{report_id} закрыт!*\n━━━━━━━━━━━━━━━━━━━━\n\nОцените работу агента №{agent_num}:", 
                 keyboard=get_rating_keyboard(report_id, agent_num).get_keyboard())
     
@@ -1807,6 +1793,46 @@ def handle_gettickets(peer_id, user_id, args):
         text += f"#{ticket_id} — от {format_user_link(user_id_t)} — {created_date}\n"
     
     send_message(peer_id, text)
+
+def handle_mutereport(peer_id, user_id, args):
+    if not is_agent(user_id) and user_id != OWNER_ID:
+        send_message(peer_id, "❌ Только для агентов!")
+        return
+    
+    if len(args) < 2:
+        send_message(peer_id, "❌ Использование: /mutereport @user [время]")
+        return
+    
+    target_id = get_user_from_text(args[0])
+    if not target_id:
+        send_message(peer_id, "❌ Пользователь не найден!")
+        return
+    
+    minutes = parse_time(args[1]) or 60
+    until = (datetime.now() + timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("INSERT OR REPLACE INTO muted_in_reports (user_id, muted_until) VALUES (?, ?)", (target_id, until))
+    conn.commit()
+    
+    send_message(peer_id, f"🔇 {format_user_link(target_id)} замучен в репортах на {args[1]}")
+
+def handle_unmutereport(peer_id, user_id, args):
+    if not is_agent(user_id) and user_id != OWNER_ID:
+        send_message(peer_id, "❌ Только для агентов!")
+        return
+    
+    if len(args) < 1:
+        send_message(peer_id, "❌ Использование: /unmutereport @user")
+        return
+    
+    target_id = get_user_from_text(args[0])
+    if not target_id:
+        send_message(peer_id, "❌ Пользователь не найден!")
+        return
+    
+    cursor.execute("DELETE FROM muted_in_reports WHERE user_id = ?", (target_id,))
+    conn.commit()
+    
+    send_message(peer_id, f"🔊 Мут в репортах снят с {format_user_link(target_id)}")
 
 # ============================================================
 # СИСТЕМА ОБЪЕДИНЕНИЙ
@@ -2416,12 +2442,12 @@ def handle_staff_with_nicks(peer_id):
         send_message(peer_id, text)
     except Exception as e:
         send_message(peer_id, f"❌ Ошибка: {e}")
+
 def handle_activity(peer_id, user_id):
     user_data = get_user_data(user_id)
     exp = user_data[22]
     level = user_data[14]
     
-    # Определяем следующий уровень
     if exp >= 5000:
         next_exp = exp
         next_level = "👑 Легенда"
@@ -2476,17 +2502,6 @@ def handle_newrole(peer_id, user_id, args):
     role_name = " ".join(args[1:])[:32]
     cursor.execute("INSERT OR REPLACE INTO chat_roles (peer_id, role_name, priority) VALUES (?, ?, ?)",
                   (peer_id, role_name, priority))
-    # Таблица для хранения ожидающих ответов (для репортов)
-    cursor.execute('''
-CREATE TABLE IF NOT EXISTS pending_answers (
-    user_id INTEGER,
-    command TEXT,
-    step INTEGER,
-    data TEXT,
-    date TEXT,
-    PRIMARY KEY(user_id, command)
-)
-''')
     conn.commit()
     send_message(peer_id, f"✅ Роль «{role_name}» с приоритетом {priority} создана!")
 
@@ -2536,7 +2551,8 @@ def handle_gsysrole(peer_id, user_id, args):
     cursor.execute("INSERT OR REPLACE INTO union_roles (union_id, user_id, role_name) VALUES (?, ?, ?)", (union_id, target_id, role))
     conn.commit()
     send_message(peer_id, f"✅ Пользователь получил роль «{role}» в объединении {union_id}!")
-    # ============================================================
+
+# ============================================================
 # ОБРАБОТЧИКИ CALLBACK
 # ============================================================
 
@@ -2547,7 +2563,6 @@ def handle_callback(event):
         payload = json.loads(event.obj.payload) if isinstance(event.obj.payload, str) else event.obj.payload
         action = payload.get("action")
         
-        # --- VIP покупка ---
         if action == "buy_vip":
             level = payload.get("level")
             prices = {1: 1000, 2: 5000, 3: 15000}
@@ -2561,11 +2576,9 @@ def handle_callback(event):
             else:
                 send_message(peer_id, f"❌ Недостаточно рублей! Нужно {prices[level]}₽")
         
-        # --- Закрыть меню ---
         elif action == "close":
             send_message(peer_id, "❌ Меню закрыто")
         
-        # --- Админ действия через кнопки ---
         elif action == "admin_warn":
             target_id = payload.get("target_id")
             if has_permission(peer_id, user_id):
@@ -2601,11 +2614,9 @@ def handle_callback(event):
             else:
                 send_message(peer_id, "❌ Нет прав!")
         
-        # --- Топы ---
         elif action in ["top_messages", "top_stickers", "top_commands", "top_money"]:
             handle_top(peer_id, action.replace("top_", ""))
         
-        # --- Магазин ---
         elif action == "shop_category":
             category = payload.get("category")
             send_message(peer_id, f"🛒 *МАГАЗИН - {category.upper()}*\n━━━━━━━━━━━━━━━━━━━━\n\nВыберите товар:", 
@@ -2621,7 +2632,6 @@ def handle_callback(event):
         elif action == "my_inventory":
             handle_my_inventory(peer_id, user_id)
         
-        # --- Репорты ---
         elif action == "take_report":
             report_id = payload.get("report_id")
             cursor.execute("SELECT status FROM reports WHERE id = ?", (report_id,))
@@ -2633,7 +2643,6 @@ def handle_callback(event):
                 conn.commit()
                 send_message(peer_id, f"✅ Вы взяли репорт #{report_id} в работу!")
                 
-                # Отправляем пользователю уведомление
                 cursor.execute("SELECT user_id FROM reports WHERE id = ?", (report_id,))
                 report_user = cursor.fetchone()
                 if report_user:
@@ -2642,7 +2651,6 @@ def handle_callback(event):
                     except:
                         pass
                 
-                # Обновляем клавиатуру для агента
                 send_message(peer_id, f"📋 *РЕПОРТ #{report_id}*\n━━━━━━━━━━━━━━━━━━━━\n\nРепорт в работе. Используйте кнопки для ответа или закрытия:",
                             keyboard=get_report_in_progress_keyboard(report_id).get_keyboard())
         
@@ -2660,7 +2668,6 @@ def handle_callback(event):
         
         elif action == "report_reply":
             report_id = payload.get("report_id")
-            # Сохраняем состояние ожидания ответа
             cursor.execute("INSERT OR REPLACE INTO pending_answers (user_id, command, step, data, date) VALUES (?, ?, ?, ?, ?)",
                           (user_id, "report_reply", 1, json.dumps({"report_id": report_id}), datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
             conn.commit()
@@ -2681,7 +2688,6 @@ def handle_callback(event):
                 cursor.execute("UPDATE reports SET rating = ? WHERE id = ?", (rating, report_id))
                 conn.commit()
                 
-                # Обновляем рейтинг агента
                 user_data = get_user_data(agent_id)
                 if user_data[16] == 0:
                     new_rating = rating
@@ -2692,7 +2698,6 @@ def handle_callback(event):
                 
                 send_message(peer_id, f"⭐ Спасибо за оценку! Агент №{get_agent_number(agent_id)} получил {rating}★")
         
-        # --- Настройка доступов агента ---
         elif action == "toggle_access":
             target_id = payload.get("target_id")
             command = payload.get("command")
@@ -2706,11 +2711,9 @@ def handle_callback(event):
             text = f"🔐 *НАСТРОЙКА ДОСТУПОВ АГЕНТА*\n━━━━━━━━━━━━━━━━━━━━\nАгент №{get_agent_number(target_id)}\n\n✅ Доступ {'ВКЛЮЧЕН' if current_access[command] else 'ВЫКЛЮЧЕН'} для /{command}"
             send_message(peer_id, text, keyboard=get_agent_access_keyboard(target_id, current_access).get_keyboard())
         
-        # --- Стафф с никами ---
         elif action == "staff_with_nicks":
             handle_staff_with_nicks(peer_id)
         
-        # --- Обновить пинг ---
         elif action == "ping_refresh":
             start = time.time()
             end = time.time()
@@ -2718,14 +2721,12 @@ def handle_callback(event):
             text = f"✅ *БОТ РАБОТАЕТ*\n━━━━━━━━━━━━━━━━━━━━\n🏓 Понг! Задержка: {latency} мс"
             send_message(peer_id, text, keyboard=get_ping_keyboard().get_keyboard())
         
-        # --- Моя активность ---
         elif action == "my_activity":
             handle_activity(peer_id, user_id)
         
         elif action == "top_activity":
             handle_top(peer_id, "activity")
         
-        # --- Ответ на callback (snackbar) ---
         try:
             vk.messages.sendMessageEventAnswer(
                 event_id=event.obj.event_id,
@@ -2748,10 +2749,9 @@ def main():
     print(f"🤖 Бот запущен! Владелец: {OWNER_ID}")
     print(f"📊 Бот готов к работе!")
     
-    # Запускаем фоновую задачу для майнинга (проверка каждый час)
     def mining_checker():
         while True:
-            time.sleep(3600)  # Каждый час
+            time.sleep(3600)
             cursor.execute("SELECT user_id, miner_type FROM users WHERE miner_type IS NOT NULL AND miner_type != ''")
             miners = cursor.fetchall()
             for user_id, miner_type in miners:
@@ -2759,14 +2759,12 @@ def main():
                     btc_per_hour = SHOP_ITEMS.get(miner_type, {}).get('btc_per_hour', 0)
                     if btc_per_hour > 0:
                         update_balance(user_id, 'btc', btc_per_hour)
-                        # Уведомление в ЛС (опционально)
                         try:
-                            send_message(user_id, f"⚙️ Ваш майнер {SHOP_ITEMS[miner_type]['name']} добыл {btc_per_hour:.6f} ₿ за час!")
+                            send_message(user_id, f"⚙️ Ваш майнер добыл {btc_per_hour:.6f} ₿ за час!")
                         except:
                             pass
             conn.commit()
     
-    # Запускаем поток для майнинга
     mining_thread = threading.Thread(target=mining_checker, daemon=True)
     mining_thread.start()
     
@@ -2781,34 +2779,28 @@ def main():
                 text = msg.get('text', '') or ''
                 reply_message = msg.get('reply_message')
                 
-                # Получаем ID пользователя, на чьё сообщение ответили
                 reply_to_user_id = None
                 if reply_message:
                     reply_to_user_id = reply_message.get('from_id')
                 
-                # Игнорируем себя
                 if user_id < 0:
                     continue
                 
-                # Проверка на системный бан (уровень 3 - блок команд)
                 user_data = get_user_data(user_id)
                 if user_data[17] == 3:
                     continue
                 
-                # Проверка на временный мут
                 cursor.execute("SELECT until FROM temp_mutes WHERE user_id = ? AND peer_id = ?", (user_id, peer_id))
                 muted = cursor.fetchone()
                 if muted and datetime.now() < datetime.strptime(muted[0], "%Y-%m-%d %H:%M:%S"):
                     continue
                 
-                # Проверка на ссылки
                 if re.search(r'vk\.(com|ru)|https?://', text):
                     chat_data = cursor.execute("SELECT links_block FROM chats WHERE peer_id = ?", (peer_id,)).fetchone()
                     if chat_data and chat_data[0] == 1:
                         send_message(peer_id, f"❌ {format_user_link(user_id)}, ссылки запрещены!")
                         continue
                 
-                # Обновление статистики и опыта
                 if msg.get('payload'):
                     cursor.execute("UPDATE users SET commands_count = commands_count + 1 WHERE user_id = ?", (user_id,))
                     add_activity_exp(user_id, 1)
@@ -2820,7 +2812,6 @@ def main():
                     add_activity_exp(user_id, 1)
                 conn.commit()
                 
-                # Проверка на ожидание ответа (для репортов)
                 cursor.execute("SELECT command, step, data FROM pending_answers WHERE user_id = ?", (user_id,))
                 pending = cursor.fetchone()
                 if pending and text:
@@ -2834,7 +2825,6 @@ def main():
                         handle_report_reply(user_id, report_id, text)
                     continue
                 
-                # Проверка на команду
                 for prefix in PREFIXES:
                     if text.startswith(prefix):
                         cmd_text = text[len(prefix):].lower().strip()
@@ -2845,7 +2835,6 @@ def main():
                         cmd = parts[0]
                         args = parts[1:]
                         
-                        # ОСНОВНЫЕ КОМАНДЫ
                         if cmd in ['ban', 'бан']:
                             handle_ban(peer_id, user_id, args, reply_to_user_id)
                         elif cmd in ['kick', 'кик']:
@@ -2911,8 +2900,6 @@ def main():
                             handle_unmutereport(peer_id, user_id, args)
                         elif cmd in ['activity', 'активность']:
                             handle_activity(peer_id, user_id)
-                        
-                        # СЕКРЕТНЫЕ КОМАНДЫ (агенты)
                         elif cmd in ['agent']:
                             handle_agent(peer_id, user_id, args)
                         elif cmd in ['sysban']:
@@ -2937,8 +2924,6 @@ def main():
                             handle_syslinks(peer_id, user_id, args)
                         elif cmd in ['getbotstats']:
                             handle_getbotstats(peer_id, user_id)
-                        
-                        # ОБЪЕДИНЕНИЯ
                         elif cmd in ['union']:
                             handle_union(peer_id, user_id, args)
                         elif cmd in ['grole']:
@@ -2953,18 +2938,12 @@ def main():
                             handle_gzov(peer_id, user_id, args)
                         elif cmd in ['gnick']:
                             handle_gnick(peer_id, user_id, args)
-                        
-                        # РАБЫ
                         elif cmd in ['рабы', 'slaves']:
                             handle_slaves(peer_id, user_id, args)
-                        
-                        # БРАКИ
                         elif cmd in ['брак', 'marriage']:
                             handle_marriage(peer_id, user_id, args)
                         elif cmd in ['поцеловать', 'kiss']:
                             handle_kiss(peer_id, user_id, args)
-                        
-                        # РОЛИ
                         elif cmd in ['newrole']:
                             handle_newrole(peer_id, user_id, args)
                         elif cmd in ['delrole']:
@@ -2973,8 +2952,6 @@ def main():
                             handle_sysrole(peer_id, user_id, args)
                         elif cmd in ['gsysrole']:
                             handle_gsysrole(peer_id, user_id, args)
-                        
-                        # ТОПЫ И СТАФФ
                         elif cmd in ['top', 'топ']:
                             send_message(peer_id, "📊 *ВЫБЕРИТЕ КАТЕГОРИЮ*\n━━━━━━━━━━━━━━━━━━━━", keyboard=get_top_keyboard().get_keyboard())
                         elif cmd in ['staff', 'админы']:
@@ -2982,7 +2959,6 @@ def main():
                         elif cmd in ['help', 'помощь']:
                             send_message(peer_id, "📚 *СПРАВКА ПО КОМАНДАМ*\n━━━━━━━━━━━━━━━━━━━━\n\n📖 Полный список команд: https://vk.com/@your_community_commands\n\n📌 Основные команды:\n/stats - статистика\n/balance - баланс\n/work - работа\n/рулетка - казино\n/report - жалоба\n/рабы - система рабов\n/брак - система браков\n/vip - VIP магазин\n/shop - магазин\n/top - топы\n/staff - админы\n/activity - уровень активности")
                         else:
-                            # Проверка на похожую команду
                             similar_cmds = ['ban', 'kick', 'mute', 'warn', 'stats', 'vip', 'balance', 'work', 'bonus', 'shop', 'report']
                             for sc in similar_cmds:
                                 if sc.startswith(cmd) or cmd.startswith(sc):
@@ -2994,7 +2970,6 @@ def main():
                 handle_callback(event)
                 
             elif event.type == VkBotEventType.GROUP_JOIN:
-                # Пользователь зашёл в беседу
                 peer_id = event.obj.peer_id
                 user_id = event.obj.user_id
                 
@@ -3004,7 +2979,6 @@ def main():
                     send_message(peer_id, result[0].replace("{user}", format_user_link(user_id)))
                     
             elif event.type == VkBotEventType.GROUP_LEAVE:
-                # Пользователь вышел из беседы
                 peer_id = event.obj.peer_id
                 user_id = event.obj.user_id
                 self_exit = event.obj.self
